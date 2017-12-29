@@ -1,4 +1,5 @@
 extern crate byteorder;
+extern crate crc;
 
 use std::io;
 use std::fmt;
@@ -6,7 +7,28 @@ use std::fs::File;
 use std::string;
 use std::io::prelude::*;
 use byteorder::{LittleEndian, ReadBytesExt};
+use crc::{crc32, Hasher32};
 
+#[derive(Debug)]
+enum ReadUtf8StringError {
+	IOError(io::Error),
+	UTF8Error(string::FromUtf8Error),
+}
+
+fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, ReadUtf8StringError> {
+	let mut vec = vec![0; capacity];
+
+	reader
+		.read_exact(&mut vec)
+		.map_err(|err| ReadUtf8StringError::IOError(err))
+		.and_then(|_| {
+			let pos = vec.iter().position(|&x| x == 0).unwrap_or(64);
+			let bar = &vec[0..pos];
+			String::from_utf8(Vec::from(bar)).map_err(|err| ReadUtf8StringError::UTF8Error(err))
+		})
+}
+
+#[derive(Default)]
 struct Header {
 	id: String,       // 64 bytes
 	app_id: String,   // 128
@@ -34,55 +56,35 @@ impl std::fmt::Debug for Header {
 	}
 }
 
-#[derive(Debug)]
-enum ReadUtf8StringError {
-	IOError(io::Error),
-	UTF8Error(string::FromUtf8Error),
-}
-
-fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, ReadUtf8StringError> {
-	let mut vec = vec![0; capacity];
-
-	reader
-		.read_exact(&mut vec)
-		.map_err(|err| ReadUtf8StringError::IOError(err))
-		.and_then(|_| {
-			let pos = vec.iter().position(|&x| x == 0).unwrap_or(64);
-			let bar = &vec[0..pos];
-			String::from_utf8(Vec::from(bar)).map_err(|err| ReadUtf8StringError::UTF8Error(err))
-		})
-}
+const HEADER_SIZE: usize = 448;
 
 impl Header {
-	fn deserialize(reader: &mut Read) -> Header {
-		// let mut buffer = [0; 448];
-	// reader.read_exact(&mut buffer).expect("header");
+	fn from_reader(reader: &mut Read) -> Header {
+		let mut buf = [0; HEADER_SIZE];
+		reader.read_exact(&mut buf).expect("read error");
+		let mut read: &[u8] = &buf;
 
-		// let iterator = (&buffer[..]).iter();
-	// let foo = iterator.take(64);
-
-
-		// let bar = foo.iter();
-
-
-		// let r = &buffer[..];
-
-		// r.iter();
-	// let l = r.read_exact(1);
-
-		let id = read_utf8_string(reader, 64).expect("header id");
-		let app_id = read_utf8_string(reader, 128).expect("header app id");
-		let app_name = read_utf8_string(reader, 128).expect("header app name");
-		let version = reader.read_i32::<LittleEndian>().expect("header version");
-		let num_recs = reader.read_i32::<LittleEndian>().expect("header num recs");
-		let end_offset = reader
+		let id = read_utf8_string(&mut read, 64).expect("header id");
+		let app_id = read_utf8_string(&mut read, 128).expect("header app id");
+		let app_name = read_utf8_string(&mut read, 128).expect("header app name");
+		let version = read.read_i32::<LittleEndian>().expect("header version");
+		let num_recs = read.read_i32::<LittleEndian>().expect("header num recs");
+		let end_offset = read
 			.read_u32::<LittleEndian>()
 			.expect("header end offset");
-		let flags = reader.read_u32::<LittleEndian>().expect("header flags");
+		let flags = read.read_u32::<LittleEndian>().expect("header flags");
 
 		let mut reserved = [0; 108];
-		reader.read_exact(&mut reserved).expect("header reserved");
-		let crc = reader.read_u32::<LittleEndian>().expect("header crc");
+		read.read_exact(&mut reserved).expect("header reserved");
+		let crc = read.read_u32::<LittleEndian>().expect("header crc");
+
+		let mut digest = crc32::Digest::new(crc32::IEEE);
+		digest.write(&buf[..HEADER_SIZE-4]);
+		let actual_crc = digest.sum32();
+
+		if actual_crc != crc {
+			panic!("header crc32 check failed");
+		}
 
 		Header {
 			id,
@@ -92,7 +94,6 @@ impl Header {
 			num_recs,
 			end_offset,
 			flags,
-			// reserved: Reserved { data: reserved },
 			crc,
 		}
 	}
@@ -105,7 +106,8 @@ impl Header {
 fn main() {
 	let filename = "unins000.dat";
 	let mut f = File::open(filename).expect("file not found");
-	let header = Header::deserialize(&mut f);
+
+	let header = Header::from_reader(&mut f);
 
 
 	// let mut contents = String::new();
