@@ -57,6 +57,9 @@ impl std::fmt::Debug for Header {
 }
 
 const HEADER_SIZE: usize = 448;
+const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
+const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
+const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
 
 impl Header {
 	fn from_reader(reader: &mut Read) -> Header {
@@ -86,6 +89,16 @@ impl Header {
 			panic!("header crc32 check failed");
 		}
 
+		match id.as_ref() {
+			HEADER_ID_32 => (),
+			HEADER_ID_64 => (),
+			_ => panic!("header id not valid")
+		}
+
+		if version > HIGHEST_SUPPORTED_VERSION {
+			panic!("header version not supported");
+		}
+
 		Header {
 			id,
 			app_id,
@@ -99,20 +112,10 @@ impl Header {
 	}
 }
 
-// const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
-// const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
-// const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
-
 fn main() {
 	let filename = "unins000.dat";
 	let mut f = File::open(filename).expect("file not found");
 
 	let header = Header::from_reader(&mut f);
-
-
-	// let mut contents = String::new();
- // f.read_to_string(&mut contents)
- // 	.expect("something went wrong reading the file");
-
 	println!("{:?}", header);
 }
