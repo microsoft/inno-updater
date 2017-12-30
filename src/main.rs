@@ -5,7 +5,9 @@ use std::io;
 use std::io::prelude::*;
 use std::fmt;
 use std::fs;
+use std::vec::Vec;
 use std::string;
+use std::collections::HashMap;
 use byteorder::{LittleEndian, ReadBytesExt};
 use crc::{crc32, Hasher32};
 
@@ -204,7 +206,7 @@ struct Header {
 	app_id: String,   // 128
 	app_name: String, // 128
 	version: i32,
-	num_recs: i32,
+	num_recs: usize,
 	end_offset: u32,
 	flags: u32,
 	crc: u32,
@@ -236,7 +238,7 @@ impl Header {
 		let app_id = read_utf8_string(&mut read, 128).expect("header app id");
 		let app_name = read_utf8_string(&mut read, 128).expect("header app name");
 		let version = read.read_i32::<LittleEndian>().expect("header version");
-		let num_recs = read.read_i32::<LittleEndian>().expect("header num recs");
+		let num_recs = read.read_i32::<LittleEndian>().expect("header num recs") as usize;
 		let end_offset = read
 			.read_u32::<LittleEndian>()
 			.expect("header end offset");
@@ -279,17 +281,31 @@ impl Header {
 
 // MAIN
 
+fn print_statistics(recs: &[FileRec]) {
+	let mut map: HashMap<u16,u32> = HashMap::new();
+
+	for rec in recs {
+		let count = map.entry(rec.typ as u16).or_insert(0);
+    *count += 1;
+	}
+
+	for (k, c) in &map {
+		println!("records 0x{:x} {}", k, c);
+	}
+}
+
 fn main() {
 	let filename = "unins000.dat";
 	let mut f = fs::File::open(filename).expect("file not found");
 
 	let header = Header::from_reader(&mut f);
 	let mut reader = BlockRead::new(&mut f);
+	let mut recs = Vec::with_capacity(header.num_recs);
 
-	for i in 0..header.num_recs {
-		let f = FileRec::from_reader(&mut reader);
-		println!("{:?}", f);
+	for _ in 0..header.num_recs {
+		recs.push(FileRec::from_reader(&mut reader));
 	}
 
-	println!("{:?}", header);
+	// println!("{:?}", header);
+	print_statistics(&recs);
 }
