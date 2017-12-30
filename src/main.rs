@@ -2,10 +2,10 @@ extern crate byteorder;
 extern crate crc;
 
 use std::io;
-use std::fmt;
-use std::fs::File;
-use std::string;
 use std::io::prelude::*;
+use std::fmt;
+use std::fs;
+use std::string;
 use byteorder::{LittleEndian, ReadBytesExt};
 use crc::{crc32, Hasher32};
 
@@ -281,7 +281,7 @@ impl Header {
 
 fn main() {
 	let filename = "unins000.dat";
-	let mut f = File::open(filename).expect("file not found");
+	let mut f = fs::File::open(filename).expect("file not found");
 
 	let header = Header::from_reader(&mut f);
 	let mut reader = BlockRead::new(&mut f);
