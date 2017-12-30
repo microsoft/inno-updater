@@ -28,7 +28,177 @@ fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, ReadUt
 		})
 }
 
-#[derive(Default)]
+const BLOCK_MAX_SIZE: usize = 4096;
+
+struct BlockRead<'a> {
+	reader: &'a mut Read,
+	buffer: [u8; 4096],
+	pos: usize,
+	left: usize,
+}
+
+impl<'a> BlockRead<'a> {
+	fn new(reader: &'a mut Read) -> BlockRead<'a> {
+		BlockRead { reader, buffer: [0; 4096], pos: 0, left: 0 }
+	}
+
+	fn fill_buffer(&mut self) -> Result<(), io::Error> {
+		let size = self.reader.read_u32::<LittleEndian>()?;
+		let not_size = self.reader.read_u32::<LittleEndian>()?;
+		let crc = self.reader.read_u32::<LittleEndian>()?;
+
+		if size != !not_size {
+			return Err(io::Error::new(io::ErrorKind::InvalidData, "block header size is corrupt"));
+		}
+
+		if size > BLOCK_MAX_SIZE as u32 {
+			return Err(io::Error::new(io::ErrorKind::InvalidData, "block header size is too large"));
+		}
+
+		let size = size as usize;
+		let mut buffer = &mut self.buffer[..size];
+		self.reader.read_exact(&mut buffer)?;
+
+		let mut digest = crc32::Digest::new(crc32::IEEE);
+		digest.write(buffer);
+		let actual_crc = digest.sum32();
+
+		if actual_crc != crc {
+			return Err(io::Error::new(io::ErrorKind::InvalidData, "block header crc32 check failed"));
+		}
+
+		self.pos = 0;
+		self.left = size;
+
+		Ok(())
+	}
+}
+
+impl<'a> Read for BlockRead<'a> {
+	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
+		let mut p: usize = 0;
+		let mut size = buf.len();
+
+		while size > 0 {
+			if self.left == 0 {
+				self.fill_buffer()?;
+			}
+
+			let mut s = size;
+
+			if s > self.left {
+				s = self.left;
+			}
+
+			let to = &mut buf[p..p+s];
+			let from = &self.buffer[self.pos..self.pos+s];
+
+			to.copy_from_slice(from);
+			self.pos += s;
+			self.left -= s;
+			p += s;
+			size -= s;
+		}
+
+		Ok(buf.len())
+	}
+}
+
+// FILE REC
+
+#[derive(Copy, Clone)]
+enum UninstallRecTyp {
+	UserDefined           = 0x01,
+	StartInstall          = 0x10,
+	EndInstall            = 0x11,
+	CompiledCode          = 0x20,
+	Run                   = 0x80,
+	DeleteDirOrFiles      = 0x81,
+	DeleteFile            = 0x82,
+	DeleteGroupOrItem     = 0x83,
+	IniDeleteEntry        = 0x84,
+	IniDeleteSection      = 0x85,
+	RegDeleteEntireKey    = 0x86,
+	RegClearValue         = 0x87,
+	RegDeleteKeyIfEmpty   = 0x88,
+	RegDeleteValue        = 0x89,
+	DecrementSharedCount  = 0x8A,
+	RefreshFileAssoc      = 0x8B,
+	MutexCheck            = 0x8C,
+}
+
+impl UninstallRecTyp {
+	fn from(i: u16) -> UninstallRecTyp {
+		match i {
+			0x01 => UninstallRecTyp::UserDefined,
+			0x10 => UninstallRecTyp::StartInstall,
+			0x11 => UninstallRecTyp::EndInstall,
+			0x20 => UninstallRecTyp::CompiledCode,
+			0x80 => UninstallRecTyp::Run,
+			0x81 => UninstallRecTyp::DeleteDirOrFiles,
+			0x82 => UninstallRecTyp::DeleteFile,
+			0x83 => UninstallRecTyp::DeleteGroupOrItem,
+			0x84 => UninstallRecTyp::IniDeleteEntry,
+			0x85 => UninstallRecTyp::IniDeleteSection,
+			0x86 => UninstallRecTyp::RegDeleteEntireKey,
+			0x87 => UninstallRecTyp::RegClearValue,
+			0x88 => UninstallRecTyp::RegDeleteKeyIfEmpty,
+			0x89 => UninstallRecTyp::RegDeleteValue,
+			0x8A => UninstallRecTyp::DecrementSharedCount,
+			0x8B => UninstallRecTyp::RefreshFileAssoc,
+			0x8C => UninstallRecTyp::MutexCheck,
+			_ => panic!(""),
+		}
+	}
+}
+
+struct FileRec {
+	typ: UninstallRecTyp,
+	extra_data: u32,
+	data: Vec<u8>,
+}
+
+impl<'a> std::fmt::Debug for FileRec {
+	fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+		write!(formatter,
+			"FileRec 0x{:x} 0x{:x} {} bytes",
+			self.typ as u32,
+			self.extra_data as u32,
+			self.data.len(),
+		)
+	}
+}
+
+impl<'a> FileRec {
+	fn from_reader(reader: &mut Read) -> FileRec {
+		let typ = reader.read_u16::<LittleEndian>().expect("file rec typ");
+		let extra_data = reader.read_u32::<LittleEndian>().expect("file rec extra data");
+		let data_size = reader.read_u32::<LittleEndian>().expect("file rec data size") as usize;
+
+		if data_size > 0x8000000 {
+			panic!("file rec data size too large {}", data_size);
+		}
+
+		let mut data = vec![0; data_size];
+		reader.read_exact(&mut data).expect("file rec data");
+
+		let typ = UninstallRecTyp::from(typ);
+
+		FileRec {
+			typ,
+			extra_data,
+			data,
+		}
+	}
+}
+
+// HEADER
+
+const HEADER_SIZE: usize = 448;
+const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
+const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
+const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
+
 struct Header {
 	id: String,       // 64 bytes
 	app_id: String,   // 128
@@ -55,11 +225,6 @@ impl std::fmt::Debug for Header {
 		)
 	}
 }
-
-const HEADER_SIZE: usize = 448;
-const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
-const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
-const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
 
 impl Header {
 	fn from_reader(reader: &mut Read) -> Header {
@@ -112,10 +277,19 @@ impl Header {
 	}
 }
 
+// MAIN
+
 fn main() {
 	let filename = "unins000.dat";
 	let mut f = File::open(filename).expect("file not found");
 
 	let header = Header::from_reader(&mut f);
+	let mut reader = BlockRead::new(&mut f);
+
+	for i in 0..header.num_recs {
+		let f = FileRec::from_reader(&mut reader);
+		println!("{:?}", f);
+	}
+
 	println!("{:?}", header);
 }
