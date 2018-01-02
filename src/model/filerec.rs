@@ -67,6 +67,45 @@ impl<'a> fmt::Debug for FileRec {
 	}
 }
 
+fn decode_strings(data: &[u8]) -> Vec<String> {
+	let mut result: Vec<String> = Vec::with_capacity(10);
+	let mut slice = data.clone();
+
+	loop {
+		let reader: &mut Read = &mut slice.clone();
+		let byte_result = reader.read_u8().expect("file rec string header");
+
+		match byte_result {
+			0x00...0xfc => panic!("what 0x{:x}", byte_result),
+			0xfd => panic!("what 0x{:x}", byte_result),
+			0xfe => {
+				let size = reader
+					.read_i32::<LittleEndian>()
+					.expect("file rec string size");
+
+				let size = -size as usize;
+
+				if size > 0 {
+					assert!(size % 2 == 0);
+
+					let mut u16data: Vec<u16> = vec![0; size / 2];
+					LittleEndian::read_u16_into(&slice[5..5 + size], &mut u16data);
+
+					let string = String::from_utf16(&u16data).expect("file rec data string");
+					result.push(string);
+				}
+
+				slice = &slice[5 + size..];
+			}
+			0xff => {
+				assert!(slice.len() == 1);
+				return result;
+			}
+			_ => panic!("invalid file rec string header"),
+		}
+	}
+}
+
 impl<'a> FileRec {
 	pub fn from_reader(reader: &mut Read) -> FileRec {
 		let typ = reader.read_u16::<LittleEndian>().expect("file rec typ");
@@ -93,68 +132,42 @@ impl<'a> FileRec {
 		}
 	}
 
-	fn get_string(&self) -> (String, usize) {
-		let mut read_slice: &[u8] = &self.data;
-		let reader: &mut Read = &mut read_slice;
-
-		let first = reader.read_u8().expect("file rec data first byte");
-		assert!(first == 0xfe);
-
-		let size = reader
-			.read_i32::<LittleEndian>()
-			.expect("file rec data size");
-		assert!(size < 0);
-
-		let slice: &[u8] = &self.data;
-		let last = slice[slice.len() - 1];
-		assert!(last == 0xff);
-
-		let old_size = -size as usize;
-		assert!(old_size % 2 == 0);
-
-		let mut u16data: Vec<u16> = vec![0; old_size / 2];
-		// println!("{}, {}, {}", size, 5 + size, self.data.len());
-
-		LittleEndian::read_u16_into(&slice[5..5 + old_size], &mut u16data);
-
-		(
-			String::from_utf16(&u16data).expect("file rec data string"),
-			old_size,
-		)
-	}
-
 	pub fn rebase(&mut self, from: &str, to: &str) {
-		let (mut path, old_size) = self.get_string();
+		let strings = decode_strings(&self.data);
 
-		if path.starts_with(from) {
-			path = [to, &path[from.len()..]].join("");
-		}
+		println!("{}", strings.len());
 
-		let u16data: Vec<u16> = path.encode_utf16().collect();
-		let new_size = u16data.len() * 2;
-		let mut data: Vec<u8> = vec![0; self.data.len() - old_size + new_size];
+		// let (mut path, old_size) = self.get_string();
 
-		{
-			let mut slice: &mut [u8] = &mut data[..];
-			let writer: &mut Write = &mut slice;
+		// if path.starts_with(from) {
+	// 	path = [to, &path[from.len()..]].join("");
+	// }
 
-			writer.write_u8(0xfe).expect("file rec data first byte");
-			writer
-				.write_i32::<LittleEndian>(-(new_size as i32))
-				.expect("file rec data size");
-		}
+		// let u16data: Vec<u16> = path.encode_utf16().collect();
+	// let new_size = u16data.len() * 2;
+	// let mut data: Vec<u8> = vec![0; self.data.len() - old_size + new_size];
 
-		{
-			let slice = &mut data[5..5 + new_size];
-			LittleEndian::write_u16_into(&u16data, slice);
-		}
+		// {
+	// 	let mut slice: &mut [u8] = &mut data[..];
+	// 	let writer: &mut Write = &mut slice;
 
-		{
-			let old_rest = &self.data[5 + old_size..];
-			let new_rest = &mut data[5 + new_size..];
-			new_rest.copy_from_slice(old_rest);
-		}
+		// 	writer.write_u8(0xfe).expect("file rec data first byte");
+	// 	writer
+	// 		.write_i32::<LittleEndian>(-(new_size as i32))
+	// 		.expect("file rec data size");
+	// }
 
-		self.data = data;
+		// {
+	// 	let slice = &mut data[5..5 + new_size];
+	// 	LittleEndian::write_u16_into(&u16data, slice);
+	// }
+
+		// {
+	// 	let old_rest = &self.data[5 + old_size..];
+	// 	let new_rest = &mut data[5 + new_size..];
+	// 	new_rest.copy_from_slice(old_rest);
+	// }
+
+		// self.data = data;
 	}
 }
