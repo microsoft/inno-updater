@@ -106,6 +106,31 @@ fn decode_strings(data: &[u8]) -> Vec<String> {
 	}
 }
 
+fn encode_strings(strings: &[String]) -> Vec<u8> {
+	let mut result: Vec<u8> = Vec::with_capacity(1024);
+
+	for string in strings.iter() {
+		let u16data: Vec<u16> = string.encode_utf16().collect();
+		let size = u16data.len() * 2;
+
+		result.write_u8(0xfe).expect("file rec string header");
+
+		result
+			.write_i32::<LittleEndian>(-(size as i32))
+			.expect("file rec string size");
+
+		let start = result.len();
+		let end = start + size;
+		result.resize(end, 0);
+
+		LittleEndian::write_u16_into(&u16data, &mut result[start..end]);
+	}
+
+	result.write_u8(0xff).expect("file rec string end");
+
+	result
+}
+
 impl<'a> FileRec {
 	pub fn from_reader(reader: &mut Read) -> FileRec {
 		let typ = reader.read_u16::<LittleEndian>().expect("file rec typ");
@@ -134,8 +159,14 @@ impl<'a> FileRec {
 
 	pub fn rebase(&mut self, from: &str, to: &str) {
 		let strings = decode_strings(&self.data);
+		// println!("{}", strings.len());
 
-		println!("{}", strings.len());
+		// let old_size = self.data.len();
+		self.data = encode_strings(&strings);
+
+		// if old_size == self.data.len() {
+	// 	println!("{} -> {}", old_size, self.data.len());
+	// }
 
 		// let (mut path, old_size) = self.get_string();
 
