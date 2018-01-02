@@ -27,11 +27,11 @@ fn print_statistics(recs: &[model::FileRec]) {
 }
 
 fn main() {
-	let filename = "unins000.dat";
-	let mut f = fs::File::open(filename).expect("file not found");
+	let mut input = fs::File::open("unins000.dat").expect("file not found");
+	let mut output = fs::File::create("output.dat").expect("could not create file");
 
-	let header = model::Header::from_reader(&mut f);
-	let mut reader = blockio::BlockRead::new(&mut f);
+	let header = model::Header::from_reader(&mut input);
+	let mut reader = blockio::BlockRead::new(&mut input);
 	let mut recs = Vec::with_capacity(header.num_recs);
 
 	for _ in 0..header.num_recs {
