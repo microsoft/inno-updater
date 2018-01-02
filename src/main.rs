@@ -35,7 +35,17 @@ fn main() {
 	let mut recs = Vec::with_capacity(header.num_recs);
 
 	for _ in 0..header.num_recs {
-		recs.push(model::FileRec::from_reader(&mut reader));
+		let mut rec = model::FileRec::from_reader(&mut reader);
+
+		match rec.typ {
+			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => rec.rebase(
+				"C:\\Program Files (x86)\\ProcMon\\update",
+				"C:\\Program Files (x86)\\ProcMon",
+			),
+			_ => (),
+		}
+
+		recs.push(rec);
 	}
 
 	println!("{:?}", header);
