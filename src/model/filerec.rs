@@ -157,6 +157,22 @@ impl<'a> FileRec {
 		}
 	}
 
+	pub fn to_writer(&self, writer: &mut Write) {
+		writer
+			.write_u16::<LittleEndian>(self.typ as u16)
+			.expect("file rec typ");
+
+		writer
+			.write_u32::<LittleEndian>(self.extra_data)
+			.expect("file rec extra data");
+
+		writer
+			.write_u32::<LittleEndian>(self.data.len() as u32)
+			.expect("file rec data size");
+
+		writer.write_all(&self.data).expect("data");
+	}
+
 	pub fn rebase(&mut self, from: &str, to: &str) {
 		let paths = decode_strings(&self.data);
 
