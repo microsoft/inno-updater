@@ -6,6 +6,8 @@ mod strings;
 mod model;
 
 use std::fs;
+use std::io;
+use std::io::prelude::*;
 use std::vec::Vec;
 use std::collections::HashMap;
 
@@ -27,8 +29,8 @@ fn print_statistics(recs: &[model::FileRec]) {
 }
 
 fn main() {
-	let mut input = fs::File::open("unins000.dat").expect("file not found");
-	let mut output = fs::File::create("output.dat").expect("could not create file");
+	let input_file = fs::File::open("unins000.dat").expect("file not found");
+	let mut input = io::BufReader::new(input_file);
 
 	let header = model::Header::from_reader(&mut input);
 	let mut reader = blockio::BlockRead::new(&mut input);
@@ -48,6 +50,11 @@ fn main() {
 		recs.push(rec);
 	}
 
-	println!("{:?}", header);
-	print_statistics(&recs);
+	let mut output_file = fs::File::create("output.dat").expect("could not create file");
+	// let mut output = io::BufWriter::new(output_file);
+
+	header.to_writer(&mut output_file);
+
+	// println!("{:?}", header);
+ // print_statistics(&recs);
 }

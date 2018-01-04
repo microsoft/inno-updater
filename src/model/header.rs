@@ -2,12 +2,12 @@ use std::fmt;
 use strings;
 use std::string::String;
 use std::io::prelude::*;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc::{Hasher32, crc32};
 
 // HEADER
 
-const HEADER_SIZE: usize = 448;
+pub const HEADER_SIZE: usize = 448;
 const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
 const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
 const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
@@ -94,5 +94,47 @@ impl Header {
 			flags,
 			crc,
 		}
+	}
+
+	pub fn to_writer(&self, writer: &mut Write) {
+		let mut buf = [0; HEADER_SIZE];
+
+		{
+			let mut buf_writer: &mut [u8] = &mut buf;
+
+			strings::write_utf8_string(&mut buf_writer, &self.id, 64).expect("header id");
+			strings::write_utf8_string(&mut buf_writer, &self.app_id, 128).expect("header app id");
+			strings::write_utf8_string(&mut buf_writer, &self.app_name, 128).expect("header app name");
+
+			buf_writer
+				.write_i32::<LittleEndian>(self.version)
+				.expect("header version");
+			buf_writer
+				.write_i32::<LittleEndian>(self.num_recs as i32)
+				.expect("header num recs");
+			buf_writer
+				.write_u32::<LittleEndian>(self.end_offset)
+				.expect("header end offset");
+			buf_writer
+				.write_u32::<LittleEndian>(self.flags)
+				.expect("header flags");
+
+			let reserved = vec![0; 108];
+			buf_writer.write_all(&reserved).expect("header reserved");
+		}
+
+		let mut digest = crc32::Digest::new(crc32::IEEE);
+		digest.write(&buf[..HEADER_SIZE - 4]);
+		let crc = digest.sum32();
+
+		{
+			let mut buf_writer: &mut [u8] = &mut buf[HEADER_SIZE - 4..];
+
+			buf_writer
+				.write_u32::<LittleEndian>(crc)
+				.expect("header crc");
+		}
+
+		writer.write_all(&buf).expect("header");
 	}
 }

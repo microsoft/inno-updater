@@ -20,3 +20,17 @@ pub fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, Re
 			String::from_utf8(Vec::from(bar)).map_err(|err| ReadUtf8StringError::UTF8Error(err))
 		})
 }
+
+pub fn write_utf8_string(
+	writer: &mut Write,
+	string: &String,
+	capacity: usize,
+) -> Result<(), io::Error> {
+	let bytes = string.as_bytes();
+	writer.write_all(&bytes)?;
+
+	let rest = vec![0; capacity - bytes.len()];
+	writer.write_all(&rest)?;
+
+	Ok(())
+}
