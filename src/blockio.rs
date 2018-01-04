@@ -1,13 +1,14 @@
+use std::cmp;
 use std::io;
 use std::io::prelude::*;
-use byteorder::{LittleEndian, ReadBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc::{Hasher32, crc32};
 
 const BLOCK_MAX_SIZE: usize = 4096;
 
 pub struct BlockRead<'a> {
 	reader: &'a mut Read,
-	buffer: [u8; 4096],
+	buffer: [u8; BLOCK_MAX_SIZE],
 	pos: usize,
 	left: usize,
 }
@@ -16,7 +17,7 @@ impl<'a> BlockRead<'a> {
 	pub fn new(reader: &'a mut Read) -> BlockRead<'a> {
 		BlockRead {
 			reader,
-			buffer: [0; 4096],
+			buffer: [0; BLOCK_MAX_SIZE],
 			pos: 0,
 			left: 0,
 		}
@@ -65,7 +66,7 @@ impl<'a> BlockRead<'a> {
 
 impl<'a> Read for BlockRead<'a> {
 	fn read(&mut self, buf: &mut [u8]) -> Result<usize, io::Error> {
-		let mut p: usize = 0;
+		let mut bytes_read: usize = 0;
 		let mut size = buf.len();
 
 		while size > 0 {
@@ -73,22 +74,88 @@ impl<'a> Read for BlockRead<'a> {
 				self.fill_buffer()?;
 			}
 
-			let mut s = size;
-
-			if s > self.left {
-				s = self.left;
-			}
-
-			let to = &mut buf[p..p + s];
-			let from = &self.buffer[self.pos..self.pos + s];
+			let count = cmp::min(size, self.left);
+			let to = &mut buf[bytes_read..bytes_read + count];
+			let from = &self.buffer[self.pos..self.pos + count];
 
 			to.copy_from_slice(from);
-			self.pos += s;
-			self.left -= s;
-			p += s;
-			size -= s;
+			self.pos += count;
+			self.left -= count;
+			bytes_read += count;
+			size -= count;
 		}
 
 		Ok(buf.len())
+	}
+}
+
+pub struct BlockWrite<'a> {
+	writer: &'a mut Write,
+	buffer: [u8; BLOCK_MAX_SIZE],
+	pos: usize,
+}
+
+impl<'a> BlockWrite<'a> {
+	pub fn new(writer: &'a mut Write) -> BlockWrite<'a> {
+		BlockWrite {
+			writer,
+			buffer: [0; BLOCK_MAX_SIZE],
+			pos: 0,
+		}
+	}
+
+	fn flush_buffer(&mut self) -> Result<(), io::Error> {
+		if self.pos == 0 {
+			return Ok(());
+		}
+
+		self.writer.write_u32::<LittleEndian>(self.pos as u32)?;
+		self.writer.write_u32::<LittleEndian>(!(self.pos as u32))?;
+
+		let slice = &self.buffer[..self.pos];
+		let mut digest = crc32::Digest::new(crc32::IEEE);
+		digest.write(slice);
+
+		let crc = digest.sum32();
+		self.writer.write_u32::<LittleEndian>(crc)?;
+		self.writer.write_all(slice)?;
+
+		self.pos = 0;
+
+		Ok(())
+	}
+}
+
+impl<'a> Write for BlockWrite<'a> {
+	fn write(&mut self, buf: &[u8]) -> Result<usize, io::Error> {
+		let mut bytes_written: usize = 0;
+		let mut size = buf.len();
+
+		while size > 0 {
+			let left = BLOCK_MAX_SIZE - self.pos;
+			let count = cmp::min(size, left);
+
+			{
+				let to = &mut self.buffer[self.pos..self.pos + count];
+				let from = &buf[bytes_written..bytes_written + count];
+
+				to.copy_from_slice(from);
+			}
+
+			self.pos += count;
+			bytes_written += count;
+			size -= count;
+
+			if self.pos == BLOCK_MAX_SIZE {
+				self.flush_buffer()?;
+			}
+		}
+
+		Ok(buf.len())
+	}
+
+	fn flush(&mut self) -> Result<(), io::Error> {
+		self.flush_buffer()?;
+		self.writer.flush()
 	}
 }

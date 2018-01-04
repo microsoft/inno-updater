@@ -50,11 +50,18 @@ fn main() {
 		recs.push(rec);
 	}
 
-	let mut output_file = fs::File::create("output.dat").expect("could not create file");
-	// let mut output = io::BufWriter::new(output_file);
+	let output_file = fs::File::create("output.dat").expect("could not create file");
+	let mut output = io::BufWriter::new(output_file);
 
-	header.to_writer(&mut output_file);
+	header.to_writer(&mut output);
 
+	let mut writer = blockio::BlockWrite::new(&mut output);
+
+	for rec in recs {
+		rec.to_writer(&mut writer);
+	}
+
+	writer.flush().expect("flush");
 	// println!("{:?}", header);
  // print_statistics(&recs);
 }
