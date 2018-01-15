@@ -159,9 +159,12 @@ fn main() {
 	let (header, recs) = read_file(&uninstdat_path);
 
 	match update_folder_name {
-		Some(name) => {
-			apply_update(&uninstdat_path, name).expect("apply update");
-		}
+		Some(name) => match apply_update(&uninstdat_path, name) {
+			Err(err) => {
+				println!("Failed to apply update: {:?}", err);
+			}
+			_ => {}
+		},
 		_ => {
 			println!("{:?}", header);
 			print_statistics(&recs);
