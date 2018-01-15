@@ -66,6 +66,7 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) {
 
 	let mut header = header.clone();
 
+	// what's the full file size?
 	let end_offset = output_file.seek(io::SeekFrom::Current(0)).unwrap();
 	header.end_offset = end_offset as u32;
 
@@ -147,8 +148,6 @@ fn update(uninstdat_path: &Path, update_folder_name: &str, header: &Header, recs
 		return;
 	}
 
-	println!("{:?}", recs);
-
 	let recs: Vec<FileRec> = recs
 		.iter()
 		.map(|rec| match rec.typ {
@@ -159,10 +158,7 @@ fn update(uninstdat_path: &Path, update_folder_name: &str, header: &Header, recs
 		})
 		.collect();
 
-	let mut new_uninstdat_path = PathBuf::from(uninstdat_path);
-	new_uninstdat_path.set_file_name("unins000.dat.2");
-
-	write_file(&new_uninstdat_path, &header, recs);
+	write_file(&uninstdat_path, &header, recs);
 }
 
 fn main() {
