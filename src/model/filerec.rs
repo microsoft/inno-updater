@@ -1,4 +1,5 @@
 use std::fmt;
+use std::path::Path;
 use std::string::String;
 use std::io::prelude::*;
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
@@ -49,6 +50,7 @@ impl UninstallRecTyp {
 	}
 }
 
+#[derive(Clone)]
 pub struct FileRec {
 	pub typ: UninstallRecTyp,
 	extra_data: u32,
@@ -173,8 +175,14 @@ impl<'a> FileRec {
 		writer.write_all(&self.data).expect("data");
 	}
 
-	pub fn rebase(&mut self, from: &str, to: &str) {
+	pub fn rebase(&self, update_path: &Path) -> FileRec {
 		let paths = decode_strings(&self.data);
+		let from = update_path.to_str().expect("from path");
+		let to = update_path
+			.parent()
+			.expect("to path")
+			.to_str()
+			.expect("to path");
 
 		let rebased_paths: Vec<String> = paths
 			.iter()
@@ -187,6 +195,10 @@ impl<'a> FileRec {
 			})
 			.collect();
 
-		self.data = encode_strings(&rebased_paths);
+		FileRec {
+			typ: self.typ,
+			extra_data: self.extra_data,
+			data: encode_strings(&rebased_paths),
+		}
 	}
 }

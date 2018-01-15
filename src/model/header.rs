@@ -12,13 +12,14 @@ const HEADER_ID_32: &str = "Inno Setup Uninstall Log (b)";
 const HEADER_ID_64: &str = "Inno Setup Uninstall Log (b) 64-bit";
 const HIGHEST_SUPPORTED_VERSION: i32 = 1048;
 
+#[derive(Clone)]
 pub struct Header {
 	id: String,       // 64 bytes
 	app_id: String,   // 128
 	app_name: String, // 128
 	version: i32,
 	pub num_recs: usize,
-	end_offset: u32,
+	pub end_offset: u32,
 	flags: u32,
 	crc: u32,
 }
@@ -98,7 +99,6 @@ impl Header {
 
 	pub fn to_writer(&self, writer: &mut Write) {
 		let mut buf = [0; HEADER_SIZE];
-
 		{
 			let mut buf_writer: &mut [u8] = &mut buf;
 

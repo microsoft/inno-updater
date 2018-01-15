@@ -12,7 +12,7 @@ use std::io;
 use std::io::prelude::*;
 use std::vec::Vec;
 use std::collections::HashMap;
-use clap::{App, Arg, SubCommand};
+use clap::{App, Arg};
 use model::{FileRec, Header};
 
 // MAIN
@@ -47,9 +47,40 @@ fn read_file(path: &Path) -> (Header, Vec<FileRec>) {
 	(header, recs)
 }
 
+fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) {
+	let mut output_file = fs::File::create(path).expect("could not create file");
+
+	// skip header
+	output_file.seek(io::SeekFrom::Start(448)).expect("seek");
+
+	{
+		let mut output = io::BufWriter::new(&output_file);
+		let mut writer = blockio::BlockWrite::new(&mut output);
+
+		for rec in recs {
+			rec.to_writer(&mut writer);
+		}
+
+		writer.flush().expect("flush");
+	}
+
+	let mut header = header.clone();
+
+	let end_offset = output_file.seek(io::SeekFrom::Current(0)).unwrap();
+	header.end_offset = end_offset as u32;
+
+	// go back to beginning
+	output_file.seek(io::SeekFrom::Start(0)).unwrap();
+
+	let mut output = io::BufWriter::new(&output_file);
+	header.to_writer(&mut output);
+
+	output.flush().expect("flush");
+}
+
 const OLD_NAME: &str = "old";
 
-fn apply_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
+fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
 	let root_path = uninstdat_path.parent().expect("parent");
 
 	let mut update_path = PathBuf::from(root_path);
@@ -106,6 +137,34 @@ fn apply_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), i
 	fs::remove_dir_all(old_path)
 }
 
+fn update(uninstdat_path: &Path, update_folder_name: &str, header: &Header, recs: Vec<FileRec>) {
+	let root_path = uninstdat_path.parent().expect("parent");
+	let mut update_path = PathBuf::from(root_path);
+	update_path.push(update_folder_name);
+
+	if let Err(err) = move_update(&uninstdat_path, update_folder_name) {
+		println!("Failed to apply update: {:?}", err);
+		return;
+	}
+
+	println!("{:?}", recs);
+
+	let recs: Vec<FileRec> = recs
+		.iter()
+		.map(|rec| match rec.typ {
+			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
+				rec.rebase(&update_path)
+			}
+			_ => rec.clone(),
+		})
+		.collect();
+
+	let mut new_uninstdat_path = PathBuf::from(uninstdat_path);
+	new_uninstdat_path.set_file_name("unins000.dat.2");
+
+	write_file(&new_uninstdat_path, &header, recs);
+}
+
 fn main() {
 	let app = App::new("VSCode Update Helper Tool")
 		.version("1.0")
@@ -125,71 +184,20 @@ fn main() {
 		);
 
 	let m = app.get_matches();
-	let input_file_path = m.value_of("INPUT").unwrap();
+	let uninstdat_path = Path::new(m.value_of("INPUT").unwrap());
 
-	let update_folder_name = m.value_of("apply-update");
+	if !uninstdat_path.is_absolute() {
+		println!("Path needs to be absolute");
+		std::process::exit(1);
+	}
 
-	// println!("{}", input);
-
-	// match m.subcommand() {
-	// 	("apply-update", Some(m)) => {
-	// 		println!("applying");
-	// 	}
-	// 	_ => {
-	// 		panic!("oh no");
-	// 	}
-	// }
-
-	// if let Some(matches) = matches.subcommand_matches("apply-update") {
-	// 	println!("{:?}", matches);
-	// } else {
-	// 	app.print_help();
-	// }
-
-	// let matches = clap_app!(myapp =>
-	// 	(version: "1.0")
-	// 	(author: "Microsoft")
-	// 	(about: "Update helper tool")
-	// 	(@subcommand apply-update =>
-	// 		(about: "Applies update to Inno Setup data file")
-	// 	)
-	// ).get_matches();
-
-	let uninstdat_path = std::fs::canonicalize(input_file_path).expect("uninstdat path");
 	let (header, recs) = read_file(&uninstdat_path);
 
-	match update_folder_name {
-		Some(name) => match apply_update(&uninstdat_path, name) {
-			Err(err) => {
-				println!("Failed to apply update: {:?}", err);
-			}
-			_ => {}
-		},
+	match m.value_of("apply-update") {
+		Some(name) => update(&uninstdat_path, name, &header, recs),
 		_ => {
 			println!("{:?}", header);
 			print_statistics(&recs);
 		}
 	};
-
-	// match rec.typ {
-	// 	model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => rec.rebase(
-	// 		"C:\\Program Files (x86)\\ProcMon\\update",
-	// 		"C:\\Program Files (x86)\\ProcMon",
-	// 	),
-	// 	_ => (),
-	// }
-
-	// let output_file = fs::File::create("output.dat").expect("could not create file");
-	// let mut output = io::BufWriter::new(output_file);
-
-	// header.to_writer(&mut output);
-
-	// let mut writer = blockio::BlockWrite::new(&mut output);
-
-	// for rec in recs {
-	// 	rec.to_writer(&mut writer);
-	// }
-
-	// writer.flush().expect("flush");
-	// println!("{:?}", header);
 }
