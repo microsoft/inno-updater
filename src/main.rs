@@ -47,6 +47,65 @@ fn read_file(path: &Path) -> (Header, Vec<FileRec>) {
 	(header, recs)
 }
 
+const OLD_NAME: &str = "old";
+
+fn apply_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
+	let root_path = uninstdat_path.parent().expect("parent");
+
+	let mut update_path = PathBuf::from(root_path);
+	update_path.push(update_folder_name);
+
+	let stat = fs::metadata(&update_path)?;
+
+	if !stat.is_dir() {
+		return Err(io::Error::new(
+			io::ErrorKind::Other,
+			"Update folder is not a directory",
+		));
+	}
+
+	let mut old_path = PathBuf::from(root_path);
+	old_path.push(OLD_NAME);
+
+	fs::remove_dir_all(&old_path).ok();
+	fs::create_dir(&old_path)?;
+
+	for entry in fs::read_dir(&root_path)? {
+		let entry = entry?;
+		let entry_name = entry.file_name();
+		let entry_name = entry_name
+			.to_str()
+			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+
+		if entry_name == update_folder_name || entry_name == OLD_NAME {
+			continue;
+		}
+
+		if String::from(entry_name).starts_with("unins") {
+			continue;
+		}
+
+		let mut target = old_path.clone();
+		target.push(entry_name);
+		fs::rename(entry.path(), target)?;
+	}
+
+	for entry in fs::read_dir(&update_path)? {
+		let entry = entry?;
+		let entry_name = entry.file_name();
+		let entry_name = entry_name
+			.to_str()
+			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+
+		let mut target = PathBuf::from(root_path);
+		target.push(entry_name);
+		fs::rename(entry.path(), target)?;
+	}
+
+	fs::remove_dir_all(update_path)?;
+	fs::remove_dir_all(old_path)
+}
+
 fn main() {
 	let app = App::new("VSCode Update Helper Tool")
 		.version("1.0")
@@ -101,13 +160,7 @@ fn main() {
 
 	match update_folder_name {
 		Some(name) => {
-			let root_path = uninstdat_path.parent().expect("parent");
-			let mut update_path = PathBuf::from(root_path);
-			update_path.push(name);
-
-			println!("uninstdat: {:?}", uninstdat_path);
-			println!("update_path: {:?}", update_path);
-			println!("{}", name);
+			apply_update(&uninstdat_path, name).expect("apply update");
 		}
 		_ => {
 			println!("{:?}", header);
