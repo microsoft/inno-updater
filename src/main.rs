@@ -9,6 +9,7 @@ mod model;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::io;
+use std::env;
 use std::io::prelude::*;
 use std::vec::Vec;
 use std::collections::HashMap;
@@ -99,9 +100,19 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 	let mut old_path = PathBuf::from(root_path);
 	old_path.push(OLD_NAME);
 
+	// make sure `old` is an empty directory
 	fs::remove_dir_all(&old_path).ok();
 	fs::create_dir(&old_path)?;
 
+	// get the current exe name
+	let exe_path = env::current_exe()?;
+	let exe_name = exe_path
+		.file_name()
+		.unwrap()
+		.to_str()
+		.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+
+	// move all current files to `old`
 	for entry in fs::read_dir(&root_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
@@ -109,11 +120,18 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 			.to_str()
 			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
 
+		// don't move the update folder nor the `old` folder
 		if entry_name == update_folder_name || entry_name == OLD_NAME {
 			continue;
 		}
 
+		// don't move any of the unins* files
 		if String::from(entry_name).starts_with("unins") {
+			continue;
+		}
+
+		// don't move ourselves
+		if entry_name == exe_name {
 			continue;
 		}
 
