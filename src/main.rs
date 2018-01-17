@@ -1,7 +1,6 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 extern crate byteorder;
-extern crate clap;
 extern crate crc;
 extern crate winapi;
 
@@ -14,12 +13,12 @@ use std::{env, fs, io, thread};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
-use std::collections::HashMap;
 use model::{FileRec, Header};
 
 // MAIN
 
 // fn print_statistics(recs: &[FileRec]) {
+// 	use std::collections::HashMap;
 // 	let mut map: HashMap<u16, u32> = HashMap::new();
 
 // 	for rec in recs {
