@@ -1,15 +1,17 @@
+// #![windows_subsystem = "windows"]
+
 extern crate byteorder;
 extern crate clap;
 extern crate crc;
+extern crate winapi;
 
 mod blockio;
 mod strings;
 mod model;
+mod gui;
 
-use std::fs;
+use std::{env, fs, io, thread};
 use std::path::{Path, PathBuf};
-use std::io;
-use std::env;
 use std::io::prelude::*;
 use std::vec::Vec;
 use std::collections::HashMap;
@@ -156,12 +158,17 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 	fs::remove_dir_all(old_path)
 }
 
-fn update(uninstdat_path: &Path, update_folder_name: &str, header: &Header, recs: Vec<FileRec>) {
+fn do_update(
+	uninstdat_path: PathBuf,
+	update_folder_name: String,
+	header: Header,
+	recs: Vec<FileRec>,
+) {
 	let root_path = uninstdat_path.parent().expect("parent");
 	let mut update_path = PathBuf::from(root_path);
-	update_path.push(update_folder_name);
+	update_path.push(&update_folder_name);
 
-	if let Err(err) = move_update(&uninstdat_path, update_folder_name) {
+	if let Err(err) = move_update(&uninstdat_path, &update_folder_name) {
 		println!("Failed to apply update: {:?}", err);
 		return;
 	}
@@ -177,6 +184,17 @@ fn update(uninstdat_path: &Path, update_folder_name: &str, header: &Header, recs
 		.collect();
 
 	write_file(&uninstdat_path, &header, recs);
+}
+
+fn update(uninstdat_path: PathBuf, update_folder_name: String, header: Header, recs: Vec<FileRec>) {
+	let window = gui::create_progress_window();
+
+	thread::spawn(move || {
+		do_update(uninstdat_path, update_folder_name, header, recs);
+		window.exit();
+	});
+
+	gui::event_loop();
 }
 
 fn main() {
@@ -208,7 +226,12 @@ fn main() {
 	let (header, recs) = read_file(&uninstdat_path);
 
 	match m.value_of("apply-update") {
-		Some(name) => update(&uninstdat_path, name, &header, recs),
+		Some(name) => update(
+			PathBuf::from(uninstdat_path),
+			String::from(name),
+			header,
+			recs,
+		),
 		_ => {
 			println!("{:?}", header);
 			print_statistics(&recs);

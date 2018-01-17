@@ -11,6 +11,9 @@ crc = "^1.0.0"
 version = "^2.29.1"
 default-features = false
 
+[target.'cfg(windows)'.dependencies]
+winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi"] }
+
 [profile.release]
 lto = true
 panic = 'abort'
