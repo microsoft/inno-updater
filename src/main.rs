@@ -15,25 +15,24 @@ use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
 use std::collections::HashMap;
-use clap::{App, Arg};
 use model::{FileRec, Header};
 
 // MAIN
 
-fn print_statistics(recs: &[FileRec]) {
-	let mut map: HashMap<u16, u32> = HashMap::new();
+// fn print_statistics(recs: &[FileRec]) {
+// 	let mut map: HashMap<u16, u32> = HashMap::new();
 
-	for rec in recs {
-		let count = map.entry(rec.typ as u16).or_insert(0);
-		*count += 1;
-	}
+// 	for rec in recs {
+// 		let count = map.entry(rec.typ as u16).or_insert(0);
+// 		*count += 1;
+// 	}
 
-	println!("Statistics");
+// 	println!("Statistics");
 
-	for (k, c) in &map {
-		println!("records 0x{:x} {}", k, c);
-	}
-}
+// 	for (k, c) in &map {
+// 		println!("records 0x{:x} {}", k, c);
+// 	}
+// }
 
 fn read_file(path: &Path) -> (Header, Vec<FileRec>) {
 	let input_file = fs::File::open(path).expect("file not found");
@@ -158,12 +157,9 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 	fs::remove_dir_all(old_path)
 }
 
-fn do_update(
-	uninstdat_path: PathBuf,
-	update_folder_name: String,
-	header: Header,
-	recs: Vec<FileRec>,
-) {
+fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
+	let (header, recs) = read_file(&uninstdat_path);
+
 	let root_path = uninstdat_path.parent().expect("parent");
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(&update_folder_name);
@@ -186,11 +182,11 @@ fn do_update(
 	write_file(&uninstdat_path, &header, recs);
 }
 
-fn update(uninstdat_path: PathBuf, update_folder_name: String, header: Header, recs: Vec<FileRec>) {
+fn update(uninstdat_path: PathBuf, update_folder_name: String) {
 	let window = gui::create_progress_window();
 
 	thread::spawn(move || {
-		do_update(uninstdat_path, update_folder_name, header, recs);
+		do_update(uninstdat_path, update_folder_name);
 		window.exit();
 	});
 
@@ -198,43 +194,20 @@ fn update(uninstdat_path: PathBuf, update_folder_name: String, header: Header, r
 }
 
 fn main() {
-	let app = App::new("VSCode Update Helper Tool")
-		.version("1.0")
-		.author("Microsoft")
-		.arg(
-			Arg::with_name("apply-update")
-				.long("apply-update")
-				.help("Applies an update")
-				.value_name("FOLDER_NAME")
-				.takes_value(true),
-		)
-		.arg(
-			Arg::with_name("INPUT")
-				.help("Input file")
-				.required(true)
-				.index(1),
-		);
+	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
 
-	let m = app.get_matches();
-	let uninstdat_path = Path::new(m.value_of("INPUT").unwrap());
+	if args.len() < 3 {
+		println!("Usage: inno_updater.exe update_folder_name app_path");
+		std::process::exit(1);
+	}
+
+	let update_folder_name = args[1].clone();
+	let uninstdat_path = PathBuf::from(&args[2]);
 
 	if !uninstdat_path.is_absolute() {
 		println!("Path needs to be absolute");
 		std::process::exit(1);
 	}
 
-	let (header, recs) = read_file(&uninstdat_path);
-
-	match m.value_of("apply-update") {
-		Some(name) => update(
-			PathBuf::from(uninstdat_path),
-			String::from(name),
-			header,
-			recs,
-		),
-		_ => {
-			println!("{:?}", header);
-			print_statistics(&recs);
-		}
-	};
+	update(uninstdat_path, update_folder_name);
 }
