@@ -165,7 +165,7 @@ pub fn create_progress_window() -> ProgressWindow {
 			ptr::null_mut(),
 		);
 
-		SendMessageW(pbar, PBM_SETMARQUEE, 5, 0);
+		SendMessageW(pbar, PBM_SETMARQUEE, 1, 0);
 
 		let ui_thread_id = GetCurrentThreadId();
 		ProgressWindow { ui_thread_id }

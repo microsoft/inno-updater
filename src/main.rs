@@ -140,6 +140,7 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 		fs::rename(entry.path(), target)?;
 	}
 
+	// move update to current
 	for entry in fs::read_dir(&update_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
@@ -153,26 +154,7 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 	}
 
 	fs::remove_dir_all(update_path)?;
-
-	// Try to remove old contents
-	let mut retry_count = 0;
-	loop {
-		if retry_count > 5 {
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				"Could not remove old dir",
-			));
-		}
-
-		match fs::remove_dir_all(&old_path) {
-			Ok(_) => break,
-			_ => retry_count += 1,
-		}
-
-		thread::sleep(time::Duration::from_secs(1));
-	}
-
-	Ok(())
+	fs::remove_dir_all(&old_path)
 }
 
 fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
@@ -204,6 +186,9 @@ fn update(uninstdat_path: PathBuf, update_folder_name: String) {
 	let window = gui::create_progress_window();
 
 	thread::spawn(move || {
+		// wait a bit before starting
+		thread::sleep(time::Duration::from_secs(1));
+
 		do_update(uninstdat_path, update_folder_name);
 		window.exit();
 	});
@@ -229,3 +214,14 @@ fn main() {
 
 	update(uninstdat_path, update_folder_name);
 }
+
+// fn main() {
+// 	let window = gui::create_progress_window();
+
+// 	thread::spawn(move || {
+// 		thread::sleep(time::Duration::from_secs(5));
+// 		window.exit();
+// 	});
+
+// 	gui::event_loop();
+// }
