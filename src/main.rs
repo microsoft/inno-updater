@@ -9,7 +9,7 @@ mod strings;
 mod model;
 mod gui;
 
-use std::{env, fs, io, thread};
+use std::{env, fs, io, thread, time};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -153,7 +153,26 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 	}
 
 	fs::remove_dir_all(update_path)?;
-	fs::remove_dir_all(old_path)
+
+	// Try to remove old contents
+	let mut retry_count = 0;
+	loop {
+		if retry_count > 5 {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				"Could not remove old dir",
+			));
+		}
+
+		match fs::remove_dir_all(&old_path) {
+			Ok(_) => break,
+			_ => retry_count += 1,
+		}
+
+		thread::sleep(time::Duration::from_secs(1));
+	}
+
+	Ok(())
 }
 
 fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
