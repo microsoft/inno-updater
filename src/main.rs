@@ -14,7 +14,7 @@ mod strings;
 mod model;
 mod gui;
 
-use std::{env, fs, io, thread, time};
+use std::{env, fs, io, thread, time, panic};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -187,37 +187,50 @@ fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
 	write_file(&uninstdat_path, &header, recs);
 }
 
-fn update(uninstdat_path: PathBuf, update_folder_name: String) {
-	let window = gui::create_progress_window();
-
-	thread::spawn(move || {
+fn update(uninstdat_path: PathBuf, update_folder_name: String, silent: bool) {
+	if silent {
 		// wait a bit before starting
 		thread::sleep(time::Duration::from_secs(1));
-
 		do_update(uninstdat_path, update_folder_name);
-		window.exit();
-	});
 
-	gui::event_loop();
+	} else {
+		let window = gui::create_progress_window();
+
+		thread::spawn(move || {
+			// wait a bit before starting
+			thread::sleep(time::Duration::from_secs(1));
+
+			panic::catch_unwind(|| do_update(uninstdat_path, update_folder_name)).ok();
+			window.exit();
+		});
+
+		gui::event_loop();
+	}
 }
 
 fn main() {
 	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
 
-	if args.len() < 3 {
-		println!("Usage: inno_updater.exe update_folder_name app_path");
+	if args.len() < 4 {
+		println!("Usage: inno_updater.exe update_folder_name app_path silent");
 		std::process::exit(1);
 	}
 
 	let update_folder_name = args[1].clone();
 	let uninstdat_path = PathBuf::from(&args[2]);
+	let silent = args[3].clone();
 
 	if !uninstdat_path.is_absolute() {
 		println!("Path needs to be absolute");
 		std::process::exit(1);
 	}
 
-	update(uninstdat_path, update_folder_name);
+	if silent != "true" && silent != "false" {
+		println!("Silent needs to be true or false");
+		std::process::exit(1);
+	}
+
+	update(uninstdat_path, update_folder_name, silent == "true");
 }
 
 // fn main() {
