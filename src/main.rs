@@ -14,7 +14,7 @@ mod strings;
 mod model;
 mod gui;
 
-use std::{env, fs, io, thread, time, panic};
+use std::{env, fs, io, panic, thread, time};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -192,7 +192,6 @@ fn update(uninstdat_path: PathBuf, update_folder_name: String, silent: bool) {
 		// wait a bit before starting
 		thread::sleep(time::Duration::from_secs(1));
 		do_update(uninstdat_path, update_folder_name);
-
 	} else {
 		let window = gui::create_progress_window();
 
