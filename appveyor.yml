@@ -15,7 +15,7 @@ install:
   - cargo -vV
 
 build_script:
-  - cargo-build --verbose %cargoflags%
+  - cargo-build --release --verbose %cargoflags%
 
 after_build:
   - 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe
