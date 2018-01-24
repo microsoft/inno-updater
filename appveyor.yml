@@ -14,13 +14,13 @@ install:
   - rustc -vV
   - cargo -vV
 
-build: false
-
-test_script:
+build_script:
   - cargo-build --verbose %cargoflags%
 
 after_build:
-  - cmd: 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe
+  - 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe
+  
+test: off
 
 artifacts:
   - path: inno_updater.zip
