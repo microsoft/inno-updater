@@ -85,7 +85,32 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) {
 	output.flush().expect("flush");
 }
 
-const OLD_NAME: &str = "old";
+/**
+ * Quadratic backoff retry mechanism
+ */
+fn retry<F, R, E>(closure: F) -> Result<R, E>
+where
+	F: Fn() -> Result<R, E>,
+{
+	let mut attempt: u64 = 0;
+
+	loop {
+		attempt += 1;
+
+		let result = closure();
+		match result {
+			Ok(_) => return result,
+			Err(_) => {
+				if attempt > 10 {
+					return result;
+				}
+
+				thread::sleep(time::Duration::from_millis(attempt.pow(2) * 50));
+				return result;
+			}
+		}
+	}
+}
 
 fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
 	let root_path = uninstdat_path.parent().expect("parent");
@@ -102,13 +127,6 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 		));
 	}
 
-	let mut old_path = PathBuf::from(root_path);
-	old_path.push(OLD_NAME);
-
-	// make sure `old` is an empty directory
-	fs::remove_dir_all(&old_path).ok();
-	fs::create_dir(&old_path)?;
-
 	// get the current exe name
 	let exe_path = env::current_exe()?;
 	let exe_name = exe_path
@@ -117,7 +135,7 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 		.to_str()
 		.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
 
-	// move all current files to `old`
+	// delete all current files
 	for entry in fs::read_dir(&root_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
@@ -125,24 +143,32 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 			.to_str()
 			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
 
-		// don't move the update folder nor the `old` folder
-		if entry_name == update_folder_name || entry_name == OLD_NAME {
+		// don't delete the update folder
+		if entry_name == update_folder_name {
 			continue;
 		}
 
-		// don't move any of the unins* files
+		// don't delete any of the unins* files
 		if String::from(entry_name).starts_with("unins") {
 			continue;
 		}
 
-		// don't move ourselves
+		// don't delete ourselves
 		if entry_name == exe_name {
 			continue;
 		}
 
-		let mut target = old_path.clone();
-		target.push(entry_name);
-		fs::rename(entry.path(), target)?;
+		// attempt to delete
+		retry(|| {
+			let entry_path = entry.path();
+			fs::remove_dir_all(&entry_path)?;
+
+			if !entry_path.exists() {
+				Ok(())
+			} else {
+				Err(io::Error::new(io::ErrorKind::Other, "path still exists"))
+			}
+		})?
 	}
 
 	// move update to current
@@ -158,8 +184,7 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 		fs::rename(entry.path(), target)?;
 	}
 
-	fs::remove_dir_all(update_path)?;
-	fs::remove_dir_all(&old_path)
+	fs::remove_dir_all(update_path)
 }
 
 fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
