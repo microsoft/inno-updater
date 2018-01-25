@@ -160,8 +160,14 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 
 		// attempt to delete
 		retry(|| {
+			let entry_file_type = entry.file_type()?;
 			let entry_path = entry.path();
-			fs::remove_dir_all(&entry_path)?;
+
+			if entry_file_type.is_file() {
+				fs::remove_file(&entry_path)?;
+			} else {
+				fs::remove_dir_all(&entry_path)?;
+			}
 
 			if !entry_path.exists() {
 				Ok(())
