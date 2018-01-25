@@ -102,8 +102,8 @@ pub fn create_progress_window() -> ProgressWindow {
 	use winapi::shared::windef::RECT;
 	use winapi::um::winuser::{CreateWindowExW, GetClientRect, GetDesktopWindow, GetWindowRect,
 	                          SendMessageW, SetWindowPos, ShowWindow, UpdateWindow, CW_USEDEFAULT,
-	                          HWND_TOPMOST, SW_SHOW, WS_CAPTION, WS_CHILD, WS_EX_COMPOSITED,
-	                          WS_OVERLAPPED, WS_VISIBLE};
+	                          HWND_TOPMOST, SW_SHOW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
+	                          WS_EX_COMPOSITED, WS_OVERLAPPED, WS_VISIBLE};
 	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::commctrl::{PBM_SETMARQUEE, PBS_MARQUEE, PROGRESS_CLASS};
 
@@ -118,7 +118,7 @@ pub fn create_progress_window() -> ProgressWindow {
 			WS_EX_COMPOSITED,
 			class_name,
 			utf16("VS Code").as_ptr(),
-			WS_OVERLAPPED | WS_CAPTION,
+			WS_OVERLAPPED | WS_CAPTION | WS_CLIPCHILDREN,
 			CW_USEDEFAULT,
 			CW_USEDEFAULT,
 			width,
