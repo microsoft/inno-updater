@@ -5,6 +5,10 @@
 
 #![windows_subsystem = "windows"]
 
+#[macro_use]
+extern crate slog;
+extern crate slog_term;
+extern crate slog_async;
 extern crate byteorder;
 extern crate crc;
 extern crate winapi;
@@ -18,6 +22,7 @@ use std::{env, fs, io, panic, thread, time};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
+use slog::{Drain};
 use model::{FileRec, Header};
 
 // MAIN
@@ -106,13 +111,14 @@ where
 				}
 
 				thread::sleep(time::Duration::from_millis(attempt.pow(2) * 50));
-				return result;
 			}
 		}
 	}
 }
 
-fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
+fn move_update(log: &slog::Logger, uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
+	info!(log, "move_update: {:?}, {}", uninstdat_path, update_folder_name);
+
 	let root_path = uninstdat_path.parent().expect("parent");
 
 	let mut update_path = PathBuf::from(root_path);
@@ -158,10 +164,14 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 			continue;
 		}
 
+		info!(log, "delete: {:?}", entry_name);
+		
 		// attempt to delete
 		retry(|| {
 			let entry_file_type = entry.file_type()?;
 			let entry_path = entry.path();
+
+			info!(log, "attempt to delete: {:?}", entry_name);
 
 			if entry_file_type.is_file() {
 				fs::remove_file(&entry_path)?;
@@ -172,9 +182,12 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 			if !entry_path.exists() {
 				Ok(())
 			} else {
+				warn!(log, "path still exists: {:?}", entry_name);
 				Err(io::Error::new(io::ErrorKind::Other, "path still exists"))
 			}
-		})?
+		})?;
+
+		info!(log, "delete OK: {:?}", entry_name);
 	}
 
 	// move update to current
@@ -187,21 +200,32 @@ fn move_update(uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io
 
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
-		fs::rename(entry.path(), target)?;
+
+		info!(log, "rename: {:?}", entry_name);
+		retry(|| {
+			info!(log, "attempt to rename: {:?}", entry_name);
+			fs::rename(entry.path(), &target)
+		})?;
+		info!(log, "rename OK: {:?}", entry_name);
 	}
 
 	fs::remove_dir_all(update_path)
 }
 
-fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
+fn do_update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String) {
+	info!(log, "do_update: {:?}, {}", uninstdat_path, update_folder_name);
+
 	let (header, recs) = read_file(&uninstdat_path);
+
+	info!(log, "header: {:?}", header);
+	info!(log, "num_recs: {:?}", recs.len());
 
 	let root_path = uninstdat_path.parent().expect("parent");
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(&update_folder_name);
 
-	if let Err(err) = move_update(&uninstdat_path, &update_folder_name) {
-		println!("Failed to apply update: {:?}", err);
+	if let Err(err) = move_update(&log, &uninstdat_path, &update_folder_name) {
+		error!(log, "Failed to apply update: {:?}", err);
 		return;
 	}
 
@@ -215,35 +239,59 @@ fn do_update(uninstdat_path: PathBuf, update_folder_name: String) {
 		})
 		.collect();
 
+	info!(log, "writing log to {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, recs);
+
+	info!(log, "do_update: done!");
 }
 
-fn update(uninstdat_path: PathBuf, update_folder_name: String, silent: bool) {
+fn update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String, silent: bool) {
 	if silent {
 		// wait a bit before starting
 		thread::sleep(time::Duration::from_secs(1));
-		do_update(uninstdat_path, update_folder_name);
+		do_update(log, uninstdat_path, update_folder_name);
 	} else {
 		let window = gui::create_progress_window();
 
-		thread::spawn(move || {
-			// wait a bit before starting
-			thread::sleep(time::Duration::from_secs(1));
+		thread::spawn({
+			let log = log.clone();
 
-			panic::catch_unwind(|| do_update(uninstdat_path, update_folder_name)).ok();
-			window.exit();
+			move || {
+				// wait a bit before starting
+				thread::sleep(time::Duration::from_secs(1));
+
+				panic::catch_unwind(|| do_update(log, uninstdat_path, update_folder_name)).ok();
+				window.exit();
+			}
 		});
 
 		gui::event_loop();
 	}
 }
 
-fn main() {
+fn _main() -> i32 {
+	let mut log_path = env::temp_dir();
+	log_path.push(format!("vscode-inno-updater.log"));
+	
+	let file = fs::OpenOptions::new()
+		.create(true)
+		.write(true)
+		.truncate(true)
+		.open(log_path)
+		.unwrap();
+
+	let decorator = slog_term::PlainDecorator::new(file);
+	let drain = slog_term::FullFormat::new(decorator).build().fuse();
+	let drain = slog_async::Async::new(drain).build().fuse();
+	let log = slog::Logger::root(drain, o!());
+
+	info!(log, "Starting");
+
 	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
 
 	if args.len() < 4 {
-		println!("Usage: inno_updater.exe update_folder_name app_path silent");
-		std::process::exit(1);
+		error!(log, "Usage: inno_updater.exe update_folder_name app_path silent");
+		return 1;
 	}
 
 	let update_folder_name = args[1].clone();
@@ -251,16 +299,22 @@ fn main() {
 	let silent = args[3].clone();
 
 	if !uninstdat_path.is_absolute() {
-		println!("Path needs to be absolute");
-		std::process::exit(1);
+		error!(log, "Path needs to be absolute");
+		return 1;
 	}
 
 	if silent != "true" && silent != "false" {
-		println!("Silent needs to be true or false");
-		std::process::exit(1);
+		error!(log, "Silent needs to be true or false");
+		return 1;
 	}
 
-	update(uninstdat_path, update_folder_name, silent == "true");
+	update(log, uninstdat_path, update_folder_name, silent == "true");
+
+	0
+}
+
+fn main() {
+	std::process::exit(_main());
 }
 
 // fn main() {

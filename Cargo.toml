@@ -6,6 +6,9 @@ authors = ["Microsoft <monacotools@microsoft.com>"]
 [dependencies]
 byteorder = "1"
 crc = "^1.0.0"
+slog = "2.1.1"
+slog-async = "2.2.0"
+slog-term = "2.3.0"
 
 [target.'cfg(windows)'.dependencies]
 winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi"] }
