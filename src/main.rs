@@ -20,6 +20,7 @@ mod gui;
 
 use std::{env, fs, io, thread, time};
 use std::path::{Path, PathBuf};
+use std::sync::mpsc;
 use std::io::prelude::*;
 use std::vec::Vec;
 use slog::Drain;
@@ -279,29 +280,29 @@ fn update(
 	update_folder_name: String,
 	silent: bool,
 ) -> Result<(), io::Error> {
+	// wait a bit before starting
+	thread::sleep(time::Duration::from_secs(1));
+
 	if silent {
-		// wait a bit before starting
-		thread::sleep(time::Duration::from_secs(1));
-		do_update(log, uninstdat_path, update_folder_name);
+		do_update(log, uninstdat_path, update_folder_name)
 	} else {
-		let window = gui::create_progress_window();
+		let (tx, rx) = mpsc::channel();
 
-		thread::spawn({
-			let log = log.clone();
+		thread::spawn(move || {
+			let window = gui::create_progress_window();
+			tx.send(window).unwrap();
 
-			move || {
-				// wait a bit before starting
-				thread::sleep(time::Duration::from_secs(1));
-
-				do_update(&log, uninstdat_path, update_folder_name);
-				window.exit();
-			}
+			gui::event_loop();
 		});
 
-		gui::event_loop();
-	}
+		let window = rx.recv()
+			.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
 
-	Ok(())
+		do_update(&log, uninstdat_path, update_folder_name)?;
+		window.exit();
+
+		Ok(())
+	}
 }
 
 fn _main(log: &slog::Logger) -> Result<(), io::Error> {
