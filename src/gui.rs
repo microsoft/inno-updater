@@ -4,6 +4,7 @@
  *----------------------------------------------------------------------------------------*/
 
 use std::{io, mem, ptr};
+use std::path::PathBuf;
 use winapi::shared::windef::HWND;
 use winapi::shared::minwindef::{DWORD, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::um::libloaderapi::GetModuleHandleW;
@@ -215,8 +216,8 @@ pub fn message_box(text: &str, caption: &str) -> i32 {
 }
 
 pub struct RunningProcess {
-	name: String,
-	id: DWORD,
+	pub name: String,
+	pub id: DWORD,
 }
 
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
@@ -274,5 +275,44 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 		}
 
 		return Ok(result);
+	}
+}
+
+pub fn get_process_path(process: &RunningProcess) -> Result<PathBuf, io::Error> {
+	use winapi::shared::minwindef::MAX_PATH;
+	use winapi::um::processthreadsapi::OpenProcess;
+	use winapi::um::psapi::GetModuleFileNameExW;
+	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_VM_READ};
+
+	unsafe {
+		let handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, 0, process.id);
+
+		if handle == INVALID_HANDLE_VALUE {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				"could not open process",
+			));
+		}
+
+		let mut raw_path = [0u16; MAX_PATH];
+		let len = GetModuleFileNameExW(
+			handle,
+			ptr::null_mut(),
+			raw_path.as_mut_ptr(),
+			MAX_PATH as DWORD,
+		) as usize;
+
+		if len == 0 {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				"could not get process file name",
+			));
+		}
+
+		let path = from_utf16(&raw_path[0..len])?;
+		CloseHandle(handle);
+
+		Ok(PathBuf::from(path))
 	}
 }

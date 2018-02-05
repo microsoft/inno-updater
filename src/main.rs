@@ -367,9 +367,23 @@ fn __main() -> i32 {
 }
 
 fn main() {
-	let processes = gui::get_running_processes().unwrap();
+	let root_path = PathBuf::from(r"C:\Program Files\Microsoft VS Code Insiders");
+	let name = "Code - Insiders.exe";
+	let mut code_path = root_path.clone();
+	code_path.push(name);
 
-	println!("{:?}", processes.len());
+	let processes = gui::get_running_processes().unwrap();
+	let processes = processes
+		.into_iter()
+		.filter(|p| p.name == "Code - Insiders.exe")
+		.map(|p| (gui::get_process_path(&p).unwrap(), p))
+		.filter(|p| p.0 == code_path);
+
+	for process in processes {
+		// let path = gui::get_process_path(&process).unwrap();
+		println!("{:?}", process.1.id);
+	}
+
 	// std::process::exit(__main());
 }
 
