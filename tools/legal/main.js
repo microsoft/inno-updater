@@ -35,7 +35,7 @@ async function main(argv) {
 		console.error('Some dependencies are not MIT!');
 	}
 
-	return ok ? 1 : 1;
+	return ok ? 0 : 1;
 }
 
 main(process.argv)
