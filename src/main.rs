@@ -5,12 +5,12 @@
 
 #![windows_subsystem = "windows"]
 
-#[macro_use]
-extern crate slog;
-extern crate slog_term;
-extern crate slog_async;
 extern crate byteorder;
 extern crate crc;
+#[macro_use]
+extern crate slog;
+extern crate slog_async;
+extern crate slog_term;
 extern crate winapi;
 
 mod blockio;
@@ -22,7 +22,7 @@ use std::{env, fs, io, panic, thread, time};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
-use slog::{Drain};
+use slog::Drain;
 use model::{FileRec, Header};
 
 // MAIN
@@ -116,8 +116,15 @@ where
 	}
 }
 
-fn move_update(log: &slog::Logger, uninstdat_path: &Path, update_folder_name: &str) -> Result<(), io::Error> {
-	info!(log, "move_update: {:?}, {}", uninstdat_path, update_folder_name);
+fn move_update(
+	log: &slog::Logger,
+	uninstdat_path: &Path,
+	update_folder_name: &str,
+) -> Result<(), io::Error> {
+	info!(
+		log,
+		"move_update: {:?}, {}", uninstdat_path, update_folder_name
+	);
 
 	let root_path = uninstdat_path.parent().expect("parent");
 
@@ -165,7 +172,7 @@ fn move_update(log: &slog::Logger, uninstdat_path: &Path, update_folder_name: &s
 		}
 
 		info!(log, "delete: {:?}", entry_name);
-		
+
 		// attempt to delete
 		retry(|| {
 			let entry_file_type = entry.file_type()?;
@@ -213,7 +220,10 @@ fn move_update(log: &slog::Logger, uninstdat_path: &Path, update_folder_name: &s
 }
 
 fn do_update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String) {
-	info!(log, "do_update: {:?}, {}", uninstdat_path, update_folder_name);
+	info!(
+		log,
+		"do_update: {:?}, {}", uninstdat_path, update_folder_name
+	);
 
 	let (header, recs) = read_file(&uninstdat_path);
 
@@ -272,7 +282,7 @@ fn update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String
 fn _main() -> i32 {
 	let mut log_path = env::temp_dir();
 	log_path.push(format!("vscode-inno-updater.log"));
-	
+
 	let file = fs::OpenOptions::new()
 		.create(true)
 		.write(true)
@@ -290,7 +300,10 @@ fn _main() -> i32 {
 	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
 
 	if args.len() < 4 {
-		error!(log, "Usage: inno_updater.exe update_folder_name app_path silent");
+		error!(
+			log,
+			"Usage: inno_updater.exe update_folder_name app_path silent"
+		);
 		return 1;
 	}
 
