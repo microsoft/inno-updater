@@ -1,0 +1,17 @@
+{
+  "name": "legal",
+  "version": "1.0.0",
+  "description": "",
+  "main": "main.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "got": "^8.0.3",
+    "mz": "^2.7.0",
+    "p-all": "^1.0.0",
+    "toml": "^2.3.3"
+  }
+}
