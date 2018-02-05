@@ -189,3 +189,16 @@ pub fn event_loop() {
 		}
 	}
 }
+
+pub fn message_box(text: &str, caption: &str) -> i32 {
+	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR};
+
+	unsafe {
+		MessageBoxW(
+			ptr::null_mut(),
+			utf16(text).as_ptr(),
+			utf16(caption).as_ptr(),
+			MB_ICONERROR,
+		)
+	}
+}

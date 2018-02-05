@@ -346,7 +346,7 @@ fn __main() -> i32 {
 		.create(true)
 		.write(true)
 		.truncate(true)
-		.open(log_path)
+		.open(&log_path)
 		.unwrap();
 
 	let decorator = slog_term::PlainDecorator::new(file);
@@ -358,6 +358,9 @@ fn __main() -> i32 {
 		Ok(_) => 0,
 		Err(err) => {
 			error!(log, "{}", err);
+			let msg = format!("Failed to install VS Code update. Please download and reinstall VS Code.\n\nPlease attach the following log file to a new issue on GitHub:\n\n{}", log_path.to_str().unwrap());
+			gui::message_box(&msg, "VS Code");
+
 			1
 		}
 	}
