@@ -18,7 +18,7 @@ mod strings;
 mod model;
 mod gui;
 
-use std::{env, fs, io, panic, thread, time};
+use std::{env, fs, io, thread, time};
 use std::path::{Path, PathBuf};
 use std::io::prelude::*;
 use std::vec::Vec;
@@ -43,8 +43,8 @@ use model::{FileRec, Header};
 // 	}
 // }
 
-fn read_file(path: &Path) -> (Header, Vec<FileRec>) {
-	let input_file = fs::File::open(path).expect("file not found");
+fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), io::Error> {
+	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
 
 	let header = Header::from_reader(&mut input);
@@ -55,14 +55,14 @@ fn read_file(path: &Path) -> (Header, Vec<FileRec>) {
 		recs.push(FileRec::from_reader(&mut reader));
 	}
 
-	(header, recs)
+	Ok((header, recs))
 }
 
-fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) {
-	let mut output_file = fs::File::create(path).expect("could not create file");
+fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), io::Error> {
+	let mut output_file = fs::File::create(path)?;
 
 	// skip header
-	output_file.seek(io::SeekFrom::Start(448)).expect("seek");
+	output_file.seek(io::SeekFrom::Start(448))?;
 
 	{
 		let mut output = io::BufWriter::new(&output_file);
@@ -72,22 +72,22 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) {
 			rec.to_writer(&mut writer);
 		}
 
-		writer.flush().expect("flush");
+		writer.flush()?;
 	}
 
 	let mut header = header.clone();
 
 	// what's the full file size?
-	let end_offset = output_file.seek(io::SeekFrom::Current(0)).unwrap();
+	let end_offset = output_file.seek(io::SeekFrom::Current(0))?;
 	header.end_offset = end_offset as u32;
 
 	// go back to beginning
-	output_file.seek(io::SeekFrom::Start(0)).unwrap();
+	output_file.seek(io::SeekFrom::Start(0))?;
 
 	let mut output = io::BufWriter::new(&output_file);
 	header.to_writer(&mut output);
 
-	output.flush().expect("flush");
+	output.flush()
 }
 
 /**
@@ -126,7 +126,10 @@ fn move_update(
 		"move_update: {:?}, {}", uninstdat_path, update_folder_name
 	);
 
-	let root_path = uninstdat_path.parent().expect("parent");
+	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
+		io::ErrorKind::Other,
+		"could not get parent path of uninstdat",
+	))?;
 
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(update_folder_name);
@@ -144,17 +147,24 @@ fn move_update(
 	let exe_path = env::current_exe()?;
 	let exe_name = exe_path
 		.file_name()
-		.unwrap()
+		.ok_or(io::Error::new(
+			io::ErrorKind::Other,
+			"could not get current exe name",
+		))?
 		.to_str()
-		.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+		.ok_or(io::Error::new(
+			io::ErrorKind::Other,
+			"could not get current exe name as string",
+		))?;
 
 	// delete all current files
 	for entry in fs::read_dir(&root_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
-		let entry_name = entry_name
-			.to_str()
-			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+		let entry_name = entry_name.to_str().ok_or(io::Error::new(
+			io::ErrorKind::Other,
+			"could not get entry name",
+		))?;
 
 		// don't delete the update folder
 		if entry_name == update_folder_name {
@@ -201,9 +211,10 @@ fn move_update(
 	for entry in fs::read_dir(&update_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
-		let entry_name = entry_name
-			.to_str()
-			.ok_or(io::Error::new(io::ErrorKind::Other, "oh no!"))?;
+		let entry_name = entry_name.to_str().ok_or(io::Error::new(
+			io::ErrorKind::Other,
+			"could not get entry name",
+		))?;
 
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
@@ -219,25 +230,30 @@ fn move_update(
 	fs::remove_dir_all(update_path)
 }
 
-fn do_update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String) {
+fn do_update(
+	log: &slog::Logger,
+	uninstdat_path: PathBuf,
+	update_folder_name: String,
+) -> Result<(), io::Error> {
 	info!(
 		log,
 		"do_update: {:?}, {}", uninstdat_path, update_folder_name
 	);
 
-	let (header, recs) = read_file(&uninstdat_path);
+	let (header, recs) = read_file(&uninstdat_path)?;
 
 	info!(log, "header: {:?}", header);
 	info!(log, "num_recs: {:?}", recs.len());
 
-	let root_path = uninstdat_path.parent().expect("parent");
+	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
+		io::ErrorKind::Other,
+		"could not get parent path of uninstdat",
+	))?;
+
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(&update_folder_name);
 
-	if let Err(err) = move_update(&log, &uninstdat_path, &update_folder_name) {
-		error!(log, "Failed to apply update: {:?}", err);
-		return;
-	}
+	move_update(&log, &uninstdat_path, &update_folder_name)?;
 
 	let recs: Vec<FileRec> = recs
 		.iter()
@@ -250,12 +266,19 @@ fn do_update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: Str
 		.collect();
 
 	info!(log, "writing log to {:?}", uninstdat_path);
-	write_file(&uninstdat_path, &header, recs);
+	write_file(&uninstdat_path, &header, recs)?;
 
 	info!(log, "do_update: done!");
+
+	Ok(())
 }
 
-fn update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String, silent: bool) {
+fn update(
+	log: &slog::Logger,
+	uninstdat_path: PathBuf,
+	update_folder_name: String,
+	silent: bool,
+) -> Result<(), io::Error> {
 	if silent {
 		// wait a bit before starting
 		thread::sleep(time::Duration::from_secs(1));
@@ -270,16 +293,51 @@ fn update(log: slog::Logger, uninstdat_path: PathBuf, update_folder_name: String
 				// wait a bit before starting
 				thread::sleep(time::Duration::from_secs(1));
 
-				panic::catch_unwind(|| do_update(log, uninstdat_path, update_folder_name)).ok();
+				do_update(&log, uninstdat_path, update_folder_name);
 				window.exit();
 			}
 		});
 
 		gui::event_loop();
 	}
+
+	Ok(())
 }
 
-fn _main() -> i32 {
+fn _main(log: &slog::Logger) -> Result<(), io::Error> {
+	info!(log, "Starting");
+
+	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
+
+	if args.len() < 4 {
+		return Err(io::Error::new(
+			io::ErrorKind::Other,
+			"Usage: inno_updater.exe update_folder_name app_path silent",
+		));
+	}
+
+	let update_folder_name = args[1].clone();
+	let uninstdat_path = PathBuf::from(&args[2]);
+	let silent = args[3].clone();
+
+	if !uninstdat_path.is_absolute() {
+		return Err(io::Error::new(
+			io::ErrorKind::Other,
+			"Uninstdat path needs to be absolute",
+		));
+	}
+
+	if silent != "true" && silent != "false" {
+		return Err(io::Error::new(
+			io::ErrorKind::Other,
+			"Silent needs to be true or false",
+		));
+	}
+
+	update(log, uninstdat_path, update_folder_name, silent == "true")
+}
+
+fn __main() -> i32 {
 	let mut log_path = env::temp_dir();
 	log_path.push(format!("vscode-inno-updater.log"));
 
@@ -295,39 +353,17 @@ fn _main() -> i32 {
 	let drain = slog_async::Async::new(drain).build().fuse();
 	let log = slog::Logger::root(drain, o!());
 
-	info!(log, "Starting");
-
-	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
-
-	if args.len() < 4 {
-		error!(
-			log,
-			"Usage: inno_updater.exe update_folder_name app_path silent"
-		);
-		return 1;
+	match _main(&log) {
+		Ok(_) => 0,
+		Err(err) => {
+			error!(log, "{}", err);
+			1
+		}
 	}
-
-	let update_folder_name = args[1].clone();
-	let uninstdat_path = PathBuf::from(&args[2]);
-	let silent = args[3].clone();
-
-	if !uninstdat_path.is_absolute() {
-		error!(log, "Path needs to be absolute");
-		return 1;
-	}
-
-	if silent != "true" && silent != "false" {
-		error!(log, "Silent needs to be true or false");
-		return 1;
-	}
-
-	update(log, uninstdat_path, update_folder_name, silent == "true");
-
-	0
 }
 
 fn main() {
-	std::process::exit(_main());
+	std::process::exit(__main());
 }
 
 // fn main() {
