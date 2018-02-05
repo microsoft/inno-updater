@@ -6,8 +6,13 @@ os: Visual Studio 2015
 environment:
   channel: stable
   target: i686-pc-windows-msvc
+  nodejs_version: "8"
 
 install:
+  - ps: Install-Product node $env:nodejs_version
+  - cd tools\legal
+  - npm install
+  - cd ..\..
   - appveyor DownloadFile https://win.rustup.rs/ -FileName rustup-init.exe
   - rustup-init -yv --default-toolchain %channel% --default-host %target%
   - set PATH=%PATH%;%USERPROFILE%\.cargo\bin
@@ -15,11 +20,12 @@ install:
   - cargo -vV
 
 build_script:
+  - node tools\legal Cargo.lock
   - cargo-build --release --verbose %cargoflags%
 
 after_build:
   - 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe
-  
+
 test: off
 
 artifacts:
