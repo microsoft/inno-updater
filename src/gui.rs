@@ -3,8 +3,7 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::mem;
-use std::ptr;
+use std::{io, mem, ptr};
 use winapi::shared::windef::HWND;
 use winapi::shared::minwindef::{DWORD, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::um::libloaderapi::GetModuleHandleW;
@@ -15,6 +14,18 @@ fn utf16(value: &str) -> Vec<u16> {
 	use std::iter::once;
 
 	OsStr::new(value).encode_wide().chain(once(0u16)).collect()
+}
+
+fn from_utf16(value: &[u16]) -> Result<String, io::Error> {
+	use std::ffi::OsString;
+	use std::os::windows::ffi::OsStringExt;
+
+	let pos = value.iter().position(|&x| x == 0).unwrap_or(value.len());
+	let value = &value[0..pos];
+
+	OsString::from_wide(value)
+		.into_string()
+		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could convert from utf16"))
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
@@ -200,5 +211,68 @@ pub fn message_box(text: &str, caption: &str) -> i32 {
 			utf16(caption).as_ptr(),
 			MB_ICONERROR,
 		)
+	}
+}
+
+pub struct RunningProcess {
+	name: String,
+	id: DWORD,
+}
+
+pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
+	use winapi::shared::minwindef::TRUE;
+	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+	use winapi::um::tlhelp32::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW,
+	                           Process32NextW, TH32CS_SNAPPROCESS};
+
+	unsafe {
+		let handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+
+		if handle == INVALID_HANDLE_VALUE {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				"could not create process snapshot",
+			));
+		}
+
+		let mut pe32 = PROCESSENTRY32W {
+			dwSize: 0,
+			cntUsage: 0,
+			th32ProcessID: 0,
+			th32DefaultHeapID: 0,
+			th32ModuleID: 0,
+			cntThreads: 0,
+			th32ParentProcessID: 0,
+			pcPriClassBase: 0,
+			dwFlags: 0,
+			szExeFile: [0u16; 260],
+		};
+
+		pe32.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+
+		if Process32FirstW(handle, &mut pe32) != TRUE {
+			CloseHandle(handle);
+
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				"could not get first process data",
+			));
+		}
+
+		let mut result: Vec<RunningProcess> = vec![];
+
+		loop {
+			result.push(RunningProcess {
+				name: from_utf16(&pe32.szExeFile)?,
+				id: pe32.th32ProcessID,
+			});
+
+			if Process32NextW(handle, &mut pe32) != TRUE {
+				CloseHandle(handle);
+				break;
+			}
+		}
+
+		return Ok(result);
 	}
 }

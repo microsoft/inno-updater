@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 extern crate byteorder;
 extern crate crc;
@@ -367,7 +367,10 @@ fn __main() -> i32 {
 }
 
 fn main() {
-	std::process::exit(__main());
+	let processes = gui::get_running_processes().unwrap();
+
+	println!("{:?}", processes.len());
+	// std::process::exit(__main());
 }
 
 // fn main() {
