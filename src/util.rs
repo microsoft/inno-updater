@@ -10,14 +10,14 @@ use std::{thread, time};
  */
 pub fn retry<F, R, E>(closure: F) -> Result<R, E>
 where
-	F: Fn() -> Result<R, E>,
+	F: Fn(u32) -> Result<R, E>,
 {
-	let mut attempt: u64 = 0;
+	let mut attempt: u32 = 0;
 
 	loop {
 		attempt += 1;
 
-		let result = closure();
+		let result = closure(attempt);
 		match result {
 			Ok(_) => return result,
 			Err(_) => {
@@ -25,7 +25,7 @@ where
 					return result;
 				}
 
-				thread::sleep(time::Duration::from_millis(attempt.pow(2) * 50));
+				thread::sleep(time::Duration::from_millis((attempt.pow(2) * 50) as u64));
 			}
 		}
 	}

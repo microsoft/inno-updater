@@ -8,6 +8,7 @@ use std::path::{Path, PathBuf};
 use winapi::shared::minwindef::{DWORD, TRUE};
 use strings::from_utf16;
 use util;
+use slog;
 
 pub struct RunningProcess {
 	pub name: String,
@@ -74,7 +75,11 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 /**
  * Kills a running process, if its path is the same as the provided one.
  */
-pub fn kill_process_if(process: &RunningProcess, path: &Path) -> Result<(), io::Error> {
+pub fn kill_process_if(
+	log: &slog::Logger,
+	process: &RunningProcess,
+	path: &Path,
+) -> Result<(), io::Error> {
 	use winapi::shared::minwindef::MAX_PATH;
 	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 	use winapi::um::psapi::GetModuleFileNameExW;
@@ -119,6 +124,11 @@ pub fn kill_process_if(process: &RunningProcess, path: &Path) -> Result<(), io::
 			return Ok(());
 		}
 
+		info!(
+			log,
+			"Found running '{}', pid {}, attempting to kill...", process.name, process.id
+		);
+
 		if TerminateProcess(handle, 0) != TRUE {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
@@ -126,12 +136,14 @@ pub fn kill_process_if(process: &RunningProcess, path: &Path) -> Result<(), io::
 			));
 		}
 
+		info!(log, "Successfully killed {}", process.id);
+
 		CloseHandle(handle);
 		Ok(())
 	}
 }
 
-pub fn wait_or_kill(path: &Path) -> Result<(), io::Error> {
+pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), io::Error> {
 	let file_name = path.file_name().ok_or(io::Error::new(
 		io::ErrorKind::Other,
 		"could not get process file name",
@@ -148,25 +160,32 @@ pub fn wait_or_kill(path: &Path) -> Result<(), io::Error> {
 	loop {
 		attempt += 1;
 
-		println!("is code running?");
+		info!(
+			log,
+			"Checking for running processes... (attempt {})", attempt
+		);
 
 		let processes: Vec<_> = get_running_processes()?
 			.into_iter()
 			.filter(|p| p.name == file_name)
 			.collect();
 
-		if attempt == 20 || processes.len() == 0 {
-			println!("giving up!");
+		if processes.len() == 0 {
+			info!(log, "Code is not running");
 			break;
 		}
 
-		println!("yeah try again");
+		if attempt == 20 || processes.len() == 0 {
+			info!(log, "Gave up waiting for Code to exit");
+			break;
+		}
+
+		info!(log, "Code is running, wait a bit");
 		thread::sleep(time::Duration::from_millis(250));
 	}
 
-	println!("DIE!");
 	// try to kill any running Code processes
-	util::retry(|| {
+	util::retry(|_| {
 		let processes: Vec<_> = get_running_processes()?
 			.into_iter()
 			.filter(|p| p.name == file_name)
@@ -174,8 +193,7 @@ pub fn wait_or_kill(path: &Path) -> Result<(), io::Error> {
 
 		if processes.len() > 0 {
 			for process in processes {
-				println!("KILL {}", process.id);
-				kill_process_if(&process, path)?;
+				kill_process_if(log, &process, path)?;
 			}
 		}
 

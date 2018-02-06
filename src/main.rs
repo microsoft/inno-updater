@@ -158,14 +158,12 @@ fn move_update(
 			continue;
 		}
 
-		info!(log, "delete: {:?}", entry_name);
-
 		// attempt to delete
-		util::retry(|| {
+		util::retry(|attempt| {
 			let entry_file_type = entry.file_type()?;
 			let entry_path = entry.path();
 
-			info!(log, "attempt to delete: {:?}", entry_name);
+			info!(log, "Delete: {:?} (attempt {})", entry_name, attempt);
 
 			if entry_file_type.is_file() {
 				fs::remove_file(&entry_path)?;
@@ -176,12 +174,12 @@ fn move_update(
 			if !entry_path.exists() {
 				Ok(())
 			} else {
-				warn!(log, "path still exists: {:?}", entry_name);
+				warn!(log, "Path still exists: {:?}", entry_name);
 				Err(io::Error::new(io::ErrorKind::Other, "path still exists"))
 			}
 		})?;
 
-		info!(log, "delete OK: {:?}", entry_name);
+		info!(log, "Delete OK: {:?}", entry_name);
 	}
 
 	// move update to current
@@ -197,7 +195,7 @@ fn move_update(
 		target.push(entry_name);
 
 		info!(log, "rename: {:?}", entry_name);
-		util::retry(|| {
+		util::retry(|_| {
 			info!(log, "attempt to rename: {:?}", entry_name);
 			fs::rename(entry.path(), &target)
 		})?;
@@ -212,6 +210,8 @@ fn do_update(
 	code_path: &PathBuf,
 	update_folder_name: &str,
 ) -> Result<(), io::Error> {
+	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
+
 	let root_path = code_path.parent().ok_or(io::Error::new(
 		io::ErrorKind::Other,
 		"could not get parent path of uninstdat",
@@ -219,11 +219,6 @@ fn do_update(
 
 	let mut uninstdat_path = PathBuf::from(root_path);
 	uninstdat_path.push("unins000.dat");
-
-	info!(
-		log,
-		"do_update: {:?}, {}", uninstdat_path, update_folder_name
-	);
 
 	let (header, recs) = read_file(&uninstdat_path)?;
 
@@ -250,10 +245,8 @@ fn do_update(
 		})
 		.collect();
 
-	info!(log, "writing log to {:?}", uninstdat_path);
+	info!(log, "Updating uninstall file {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, recs)?;
-
-	info!(log, "do_update: done!");
 
 	Ok(())
 }
@@ -265,11 +258,13 @@ fn update(
 	silent: bool,
 ) -> Result<(), io::Error> {
 	// wait until Code is dead, or just kill it
-	process::wait_or_kill(code_path)?;
+	process::wait_or_kill(log, code_path)?;
 
 	if silent {
+		info!(log, "Running silent update...");
 		do_update(log, code_path, update_folder_name)
 	} else {
+		info!(log, "Running update...");
 		let (tx, rx) = mpsc::channel();
 
 		thread::spawn(move || {
@@ -300,6 +295,8 @@ fn _main(log: &slog::Logger) -> Result<(), io::Error> {
 			"Usage: inno_updater.exe PATH_TO_CODE SILENT",
 		));
 	}
+
+	info!(log, "args {}, {}", args[1], args[2]);
 
 	let code_path = PathBuf::from(&args[1]);
 	let silent = args[2].clone();
@@ -345,10 +342,22 @@ fn __main() -> i32 {
 	let log = slog::Logger::root(drain, o!());
 
 	match _main(&log) {
-		Ok(_) => 0,
+		Ok(_) => {
+			info!(log, "Update was successful!");
+			0
+		}
 		Err(err) => {
 			error!(log, "{}", err);
-			let msg = format!("Failed to install VS Code update. Please download and reinstall VS Code.\n\nPlease attach the following log file to a new issue on GitHub:\n\n{}", log_path.to_str().unwrap());
+
+			let msg = format!(
+				"Failed to install VS Code update. Please download and reinstall VS Code.
+
+Please attach the following log file to a new issue on GitHub:
+
+{}",
+				log_path.to_str().unwrap()
+			);
+
 			gui::message_box(&msg, "VS Code");
 
 			1
