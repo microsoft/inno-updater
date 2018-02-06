@@ -39,3 +39,23 @@ pub fn write_utf8_string(
 
 	Ok(())
 }
+
+pub fn to_utf16(value: &str) -> Vec<u16> {
+	use std::ffi::OsStr;
+	use std::os::windows::ffi::OsStrExt;
+	use std::iter::once;
+
+	OsStr::new(value).encode_wide().chain(once(0u16)).collect()
+}
+
+pub fn from_utf16(value: &[u16]) -> Result<String, io::Error> {
+	use std::ffi::OsString;
+	use std::os::windows::ffi::OsStringExt;
+
+	let pos = value.iter().position(|&x| x == 0).unwrap_or(value.len());
+	let value = &value[0..pos];
+
+	OsString::from_wide(value)
+		.into_string()
+		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could convert from utf16"))
+}

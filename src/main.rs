@@ -17,8 +17,10 @@ mod blockio;
 mod strings;
 mod model;
 mod gui;
+mod process;
+mod util;
 
-use std::{env, fs, io, thread, time};
+use std::{env, fs, io, thread};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::io::prelude::*;
@@ -91,32 +93,6 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), io
 	output.flush()
 }
 
-/**
- * Quadratic backoff retry mechanism
- */
-fn retry<F, R, E>(closure: F) -> Result<R, E>
-where
-	F: Fn() -> Result<R, E>,
-{
-	let mut attempt: u64 = 0;
-
-	loop {
-		attempt += 1;
-
-		let result = closure();
-		match result {
-			Ok(_) => return result,
-			Err(_) => {
-				if attempt > 10 {
-					return result;
-				}
-
-				thread::sleep(time::Duration::from_millis(attempt.pow(2) * 50));
-			}
-		}
-	}
-}
-
 fn move_update(
 	log: &slog::Logger,
 	uninstdat_path: &Path,
@@ -185,7 +161,7 @@ fn move_update(
 		info!(log, "delete: {:?}", entry_name);
 
 		// attempt to delete
-		retry(|| {
+		util::retry(|| {
 			let entry_file_type = entry.file_type()?;
 			let entry_path = entry.path();
 
@@ -221,7 +197,7 @@ fn move_update(
 		target.push(entry_name);
 
 		info!(log, "rename: {:?}", entry_name);
-		retry(|| {
+		util::retry(|| {
 			info!(log, "attempt to rename: {:?}", entry_name);
 			fs::rename(entry.path(), &target)
 		})?;
@@ -233,9 +209,17 @@ fn move_update(
 
 fn do_update(
 	log: &slog::Logger,
-	uninstdat_path: PathBuf,
-	update_folder_name: String,
+	code_path: &PathBuf,
+	update_folder_name: &str,
 ) -> Result<(), io::Error> {
+	let root_path = code_path.parent().ok_or(io::Error::new(
+		io::ErrorKind::Other,
+		"could not get parent path of uninstdat",
+	))?;
+
+	let mut uninstdat_path = PathBuf::from(root_path);
+	uninstdat_path.push("unins000.dat");
+
 	info!(
 		log,
 		"do_update: {:?}, {}", uninstdat_path, update_folder_name
@@ -276,15 +260,15 @@ fn do_update(
 
 fn update(
 	log: &slog::Logger,
-	uninstdat_path: PathBuf,
-	update_folder_name: String,
+	code_path: &PathBuf,
+	update_folder_name: &str,
 	silent: bool,
 ) -> Result<(), io::Error> {
-	// wait a bit before starting
-	thread::sleep(time::Duration::from_secs(1));
+	// wait until Code is dead, or just kill it
+	process::wait_or_kill(code_path)?;
 
 	if silent {
-		do_update(log, uninstdat_path, update_folder_name)
+		do_update(log, code_path, update_folder_name)
 	} else {
 		let (tx, rx) = mpsc::channel();
 
@@ -298,7 +282,7 @@ fn update(
 		let window = rx.recv()
 			.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
 
-		do_update(&log, uninstdat_path, update_folder_name)?;
+		do_update(&log, code_path, update_folder_name)?;
 		window.exit();
 
 		Ok(())
@@ -310,21 +294,27 @@ fn _main(log: &slog::Logger) -> Result<(), io::Error> {
 
 	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
 
-	if args.len() < 4 {
+	if args.len() < 3 {
 		return Err(io::Error::new(
 			io::ErrorKind::Other,
-			"Usage: inno_updater.exe update_folder_name app_path silent",
+			"Usage: inno_updater.exe PATH_TO_CODE SILENT",
 		));
 	}
 
-	let update_folder_name = args[1].clone();
-	let uninstdat_path = PathBuf::from(&args[2]);
-	let silent = args[3].clone();
+	let code_path = PathBuf::from(&args[1]);
+	let silent = args[2].clone();
 
-	if !uninstdat_path.is_absolute() {
+	if !code_path.is_absolute() {
 		return Err(io::Error::new(
 			io::ErrorKind::Other,
-			"Uninstdat path needs to be absolute",
+			"Code path needs to be absolute",
+		));
+	}
+
+	if !code_path.exists() {
+		return Err(io::Error::new(
+			io::ErrorKind::Other,
+			"Code path doesn't seem to exist",
 		));
 	}
 
@@ -335,7 +325,7 @@ fn _main(log: &slog::Logger) -> Result<(), io::Error> {
 		));
 	}
 
-	update(log, uninstdat_path, update_folder_name, silent == "true")
+	update(log, &code_path, "_", silent == "true")
 }
 
 fn __main() -> i32 {
@@ -367,31 +357,14 @@ fn __main() -> i32 {
 }
 
 fn main() {
-	let root_path = PathBuf::from(r"C:\Program Files\Microsoft VS Code Insiders");
-	let name = "Code - Insiders.exe";
-	let mut code_path = root_path.clone();
-	code_path.push(name);
-
-	let processes = gui::get_running_processes().unwrap();
-	let processes = processes
-		.into_iter()
-		.filter(|p| p.name == "Code - Insiders.exe")
-		.map(|p| (gui::get_process_path(&p).unwrap(), p))
-		.filter(|p| p.0 == code_path);
-
-	for process in processes {
-		// let path = gui::get_process_path(&process).unwrap();
-		println!("{:?}", process.1.id);
-	}
-
-	// std::process::exit(__main());
+	std::process::exit(__main());
 }
 
 // fn main() {
 // 	let window = gui::create_progress_window();
 
 // 	thread::spawn(move || {
-// 		thread::sleep(time::Duration::from_secs(5));
+// 		thread::sleep(std::time::Duration::from_secs(5));
 // 		window.exit();
 // 	});
 
