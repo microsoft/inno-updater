@@ -284,15 +284,15 @@ fn update(
 }
 
 #[derive(Debug, Clone)]
-struct ArgumentError<'a>(&'a str);
+struct ArgumentError(String);
 
-impl<'a> fmt::Display for ArgumentError<'a> {
+impl fmt::Display for ArgumentError {
 	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
 		write!(f, "Bad arguments: {}", self.0)
 	}
 }
 
-impl<'a> error::Error for ArgumentError<'a> {
+impl error::Error for ArgumentError {
 	fn description(&self) -> &str {
 		"ArgumentError"
 	}
@@ -308,17 +308,27 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	let code_path = PathBuf::from(&args[1]);
 
 	if !code_path.is_absolute() {
-		return Err(ArgumentError("Code path needs to be absolute").into());
+		return Err(
+			ArgumentError(format!(
+				"Code path needs to be absolute. Instead got: {}",
+				args[1]
+			)).into(),
+		);
 	}
 
 	if !code_path.exists() {
-		return Err(ArgumentError("Code path doesn't seem to exist").into());
+		return Err(ArgumentError(format!("Code path doesn't seem to exist: {}", args[1])).into());
 	}
 
 	let silent = args[2].clone();
 
 	if silent != "true" && silent != "false" {
-		return Err(ArgumentError("Silent needs to be true or false").into());
+		return Err(
+			ArgumentError(format!(
+				"Silent needs to be true or false. Instead got: {}",
+				silent
+			)).into(),
+		);
 	}
 
 	update(log, &code_path, "_", silent == "true")
