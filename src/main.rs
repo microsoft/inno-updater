@@ -46,22 +46,22 @@ use model::{FileRec, Header};
 // 	}
 // }
 
-fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), io::Error> {
+fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<error::Error>> {
 	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
 
-	let header = Header::from_reader(&mut input);
+	let header = Header::from_reader(&mut input)?;
 	let mut reader = blockio::BlockRead::new(&mut input);
 	let mut recs = Vec::with_capacity(header.num_recs);
 
 	for _ in 0..header.num_recs {
-		recs.push(FileRec::from_reader(&mut reader));
+		recs.push(FileRec::from_reader(&mut reader)?);
 	}
 
 	Ok((header, recs))
 }
 
-fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), io::Error> {
+fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), Box<error::Error>> {
 	let mut output_file = fs::File::create(path)?;
 
 	// skip header
@@ -72,7 +72,7 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), io
 		let mut writer = blockio::BlockWrite::new(&mut output);
 
 		for rec in recs {
-			rec.to_writer(&mut writer);
+			rec.to_writer(&mut writer)?;
 		}
 
 		writer.flush()?;
@@ -88,9 +88,11 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), io
 	output_file.seek(io::SeekFrom::Start(0))?;
 
 	let mut output = io::BufWriter::new(&output_file);
-	header.to_writer(&mut output);
+	header.to_writer(&mut output)?;
 
-	output.flush()
+	output.flush()?;
+
+	Ok(())
 }
 
 fn move_update(
@@ -232,18 +234,18 @@ fn do_update(
 
 	move_update(&log, &uninstdat_path, &update_folder_name)?;
 
-	let recs: Vec<FileRec> = recs
+	let recs: Result<Vec<FileRec>, _> = recs
 		.iter()
 		.map(|rec| match rec.typ {
 			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
 				rec.rebase(&update_path)
 			}
-			_ => rec.clone(),
+			_ => Ok(rec.clone()),
 		})
 		.collect();
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
-	write_file(&uninstdat_path, &header, recs)?;
+	write_file(&uninstdat_path, &header, recs?)?;
 
 	Ok(())
 }
@@ -256,11 +258,11 @@ fn update(
 ) -> Result<(), Box<error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
+	info!(log, "Starting update, silent = {}", silent);
+
 	if silent {
-		info!(log, "Running silent update...");
 		do_update(log, code_path, update_folder_name)
 	} else {
-		info!(log, "Running update...");
 		let (tx, rx) = mpsc::channel();
 
 		thread::spawn(move || {

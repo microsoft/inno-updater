@@ -3,12 +3,50 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::fmt;
-use strings;
+use std::{error, fmt};
 use std::string::String;
 use std::io::prelude::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc::{Hasher32, crc32};
+use strings;
+
+#[derive(Debug, Clone)]
+pub struct HeaderParseError<'a>(&'a str);
+
+impl<'a> fmt::Display for HeaderParseError<'a> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "Header parse error: {}", self.0)
+	}
+}
+
+impl<'a> error::Error for HeaderParseError<'a> {
+	fn description(&self) -> &str {
+		"HeaderParseError"
+	}
+
+	fn cause(&self) -> Option<&error::Error> {
+		None
+	}
+}
+
+#[derive(Debug, Clone)]
+pub struct HeaderWriteError<'a>(&'a str);
+
+impl<'a> fmt::Display for HeaderWriteError<'a> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "Header write error: {}", self.0)
+	}
+}
+
+impl<'a> error::Error for HeaderWriteError<'a> {
+	fn description(&self) -> &str {
+		"HeaderWriteError"
+	}
+
+	fn cause(&self) -> Option<&error::Error> {
+		None
+	}
+}
 
 // HEADER
 
@@ -33,15 +71,7 @@ impl fmt::Debug for Header {
 	fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
 		write!(
 			formatter,
-			"Header
-id: {}
-app id: {}
-app name: {}
-version: {}
-num recs: {}
-end offset: {}
-flags: 0x{:x}
-crc: 0x{:x}",
+			"Header, id: {}, app id: {}, app name: {}, version: {}, num recs: {}, end offset: {}, flags: 0x{:x}, crc: 0x{:x}",
 			self.id,
 			self.app_id,
 			self.app_name,
@@ -55,42 +85,60 @@ crc: 0x{:x}",
 }
 
 impl Header {
-	pub fn from_reader(reader: &mut Read) -> Header {
+	pub fn from_reader<'a>(reader: &mut Read) -> Result<Header, HeaderParseError<'a>> {
 		let mut buf = [0; HEADER_SIZE];
-		reader.read_exact(&mut buf).expect("read error");
-		let mut read: &[u8] = &buf;
+		reader
+			.read_exact(&mut buf)
+			.map_err(|_| HeaderParseError("Failed to read header to buffer"))?;
 
-		let id = strings::read_utf8_string(&mut read, 64).expect("header id");
-		let app_id = strings::read_utf8_string(&mut read, 128).expect("header app id");
-		let app_name = strings::read_utf8_string(&mut read, 128).expect("header app name");
-		let version = read.read_i32::<LittleEndian>().expect("header version");
-		let num_recs = read.read_i32::<LittleEndian>().expect("header num recs") as usize;
-		let end_offset = read.read_u32::<LittleEndian>().expect("header end offset");
-		let flags = read.read_u32::<LittleEndian>().expect("header flags");
+		let mut read: &[u8] = &buf;
+		let id = strings::read_utf8_string(&mut read, 64)
+			.map_err(|_| HeaderParseError("Failed to parse header ID"))?;
+		let app_id = strings::read_utf8_string(&mut read, 128)
+			.map_err(|_| HeaderParseError("Failed to parse header app ID"))?;
+		let app_name = strings::read_utf8_string(&mut read, 128)
+			.map_err(|_| HeaderParseError("Failed to parse header app name"))?;
+		let version = read
+			.read_i32::<LittleEndian>()
+			.map_err(|_| HeaderParseError("Failed to parse header version"))?;
+		let num_recs = read
+			.read_i32::<LittleEndian>()
+			.map_err(|_| HeaderParseError("Failed to parse header num recs"))? as usize;
+		let end_offset = read
+			.read_u32::<LittleEndian>()
+			.map_err(|_| HeaderParseError("Failed to parse header end offset"))?;
+		let flags = read
+			.read_u32::<LittleEndian>()
+			.map_err(|_| HeaderParseError("Failed to parse header flags"))?;
 
 		let mut reserved = [0; 108];
-		read.read_exact(&mut reserved).expect("header reserved");
-		let crc = read.read_u32::<LittleEndian>().expect("header crc");
+		read
+			.read_exact(&mut reserved)
+			.map_err(|_| HeaderParseError("Failed to parse header reserved"))?;
+
+		let crc = read
+			.read_u32::<LittleEndian>()
+			.map_err(|_| HeaderParseError("Failed to parse header crc"))?;
 
 		let mut digest = crc32::Digest::new(crc32::IEEE);
 		digest.write(&buf[..HEADER_SIZE - 4]);
 		let actual_crc = digest.sum32();
 
 		if actual_crc != crc {
-			panic!("header crc32 check failed");
+			return Err(HeaderParseError("CRC32 check failed"));
 		}
 
 		match id.as_ref() {
 			HEADER_ID_32 => (),
 			HEADER_ID_64 => (),
-			_ => panic!("header id not valid"),
+			_ => return Err(HeaderParseError("Invalid header ID")),
 		}
 
 		if version > HIGHEST_SUPPORTED_VERSION {
-			panic!("header version not supported");
+			return Err(HeaderParseError("Header version not supported"));
 		}
 
-		Header {
+		Ok(Header {
 			id,
 			app_id,
 			app_name,
@@ -99,33 +147,38 @@ impl Header {
 			end_offset,
 			flags,
 			crc,
-		}
+		})
 	}
 
-	pub fn to_writer(&self, writer: &mut Write) {
+	pub fn to_writer<'a>(&self, writer: &mut Write) -> Result<(), HeaderWriteError<'a>> {
 		let mut buf = [0; HEADER_SIZE];
 		{
 			let mut buf_writer: &mut [u8] = &mut buf;
 
-			strings::write_utf8_string(&mut buf_writer, &self.id, 64).expect("header id");
-			strings::write_utf8_string(&mut buf_writer, &self.app_id, 128).expect("header app id");
-			strings::write_utf8_string(&mut buf_writer, &self.app_name, 128).expect("header app name");
+			strings::write_utf8_string(&mut buf_writer, &self.id, 64)
+				.map_err(|_| HeaderWriteError("Failed to write header id to buffer"))?;
+			strings::write_utf8_string(&mut buf_writer, &self.app_id, 128)
+				.map_err(|_| HeaderWriteError("Failed to write header app id to buffer"))?;
+			strings::write_utf8_string(&mut buf_writer, &self.app_name, 128)
+				.map_err(|_| HeaderWriteError("Failed to write header app name to buffer"))?;
 
 			buf_writer
 				.write_i32::<LittleEndian>(self.version)
-				.expect("header version");
+				.map_err(|_| HeaderWriteError("Failed to write header version to buffer"))?;
 			buf_writer
 				.write_i32::<LittleEndian>(self.num_recs as i32)
-				.expect("header num recs");
+				.map_err(|_| HeaderWriteError("Failed to write header num recs to buffer"))?;
 			buf_writer
 				.write_u32::<LittleEndian>(self.end_offset)
-				.expect("header end offset");
+				.map_err(|_| HeaderWriteError("Failed to write header end offset to buffer"))?;
 			buf_writer
 				.write_u32::<LittleEndian>(self.flags)
-				.expect("header flags");
+				.map_err(|_| HeaderWriteError("Failed to write header flags to buffer"))?;
 
 			let reserved = vec![0; 108];
-			buf_writer.write_all(&reserved).expect("header reserved");
+			buf_writer
+				.write_all(&reserved)
+				.map_err(|_| HeaderWriteError("Failed to write header reserved to buffer"))?;
 		}
 
 		let mut digest = crc32::Digest::new(crc32::IEEE);
@@ -133,13 +186,17 @@ impl Header {
 		let crc = digest.sum32();
 
 		{
-			let mut buf_writer: &mut [u8] = &mut buf[HEADER_SIZE - 4..];
+			let mut buf_writer = &mut buf[HEADER_SIZE - 4..];
 
 			buf_writer
 				.write_u32::<LittleEndian>(crc)
-				.expect("header crc");
+				.map_err(|_| HeaderWriteError("Failed to write header crc to buffer"))?;;
 		}
 
-		writer.write_all(&buf).expect("header");
+		writer
+			.write_all(&buf)
+			.map_err(|_| HeaderWriteError("Failed to write header to writer"))?;
+
+		Ok(())
 	}
 }
