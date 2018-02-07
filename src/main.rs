@@ -20,7 +20,7 @@ mod gui;
 mod process;
 mod util;
 
-use std::{env, fs, io, thread};
+use std::{env, error, fmt, fs, io, thread};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::io::prelude::*;
@@ -209,7 +209,7 @@ fn do_update(
 	log: &slog::Logger,
 	code_path: &PathBuf,
 	update_folder_name: &str,
-) -> Result<(), io::Error> {
+) -> Result<(), Box<error::Error>> {
 	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
 
 	let root_path = code_path.parent().ok_or(io::Error::new(
@@ -256,8 +256,7 @@ fn update(
 	code_path: &PathBuf,
 	update_folder_name: &str,
 	silent: bool,
-) -> Result<(), io::Error> {
-	// wait until Code is dead, or just kill it
+) -> Result<(), Box<error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
 	if silent {
@@ -284,48 +283,48 @@ fn update(
 	}
 }
 
-fn _main(log: &slog::Logger) -> Result<(), io::Error> {
-	info!(log, "Starting");
+#[derive(Debug, Clone)]
+struct ArgumentError<'a>(&'a str);
 
-	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
+impl<'a> fmt::Display for ArgumentError<'a> {
+	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+		write!(f, "Bad arguments: {}", self.0)
+	}
+}
 
-	if args.len() < 3 {
-		return Err(io::Error::new(
-			io::ErrorKind::Other,
-			"Usage: inno_updater.exe PATH_TO_CODE SILENT",
-		));
+impl<'a> error::Error for ArgumentError<'a> {
+	fn description(&self) -> &str {
+		format!("Bad arguments: {}", self.0)
 	}
 
-	info!(log, "args {}, {}", args[1], args[2]);
+	fn cause(&self) -> Option<&error::Error> {
+		None
+	}
+}
+
+fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>> {
+	info!(log, "Starting: {}, {}", args[1], args[2]);
 
 	let code_path = PathBuf::from(&args[1]);
-	let silent = args[2].clone();
 
 	if !code_path.is_absolute() {
-		return Err(io::Error::new(
-			io::ErrorKind::Other,
-			"Code path needs to be absolute",
-		));
+		return Err(ArgumentError("Code path needs to be absolute").into());
 	}
 
 	if !code_path.exists() {
-		return Err(io::Error::new(
-			io::ErrorKind::Other,
-			"Code path doesn't seem to exist",
-		));
+		return Err(ArgumentError("Code path doesn't seem to exist").into());
 	}
+	
+	let silent = args[2].clone();
 
 	if silent != "true" && silent != "false" {
-		return Err(io::Error::new(
-			io::ErrorKind::Other,
-			"Silent needs to be true or false",
-		));
+		return Err(ArgumentError("Silent needs to be true or false").into());
 	}
 
 	update(log, &code_path, "_", silent == "true")
 }
 
-fn __main() -> i32 {
+fn __main(args: &Vec<String>) -> i32 {
 	let mut log_path = env::temp_dir();
 	log_path.push(format!("vscode-inno-updater.log"));
 
@@ -341,7 +340,7 @@ fn __main() -> i32 {
 	let drain = slog_async::Async::new(drain).build().fuse();
 	let log = slog::Logger::root(drain, o!());
 
-	match _main(&log) {
+	match _main(&log, args) {
 		Ok(_) => {
 			info!(log, "Update was successful!");
 			0
@@ -366,7 +365,13 @@ Please attach the following log file to a new issue on GitHub:
 }
 
 fn main() {
-	std::process::exit(__main());
+	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
+
+	if args.len() < 3 {
+		std::process::exit(1);
+	} else {
+		std::process::exit(__main(&args));
+	}
 }
 
 // fn main() {
