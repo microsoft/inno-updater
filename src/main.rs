@@ -294,7 +294,7 @@ impl<'a> fmt::Display for ArgumentError<'a> {
 
 impl<'a> error::Error for ArgumentError<'a> {
 	fn description(&self) -> &str {
-		format!("Bad arguments: {}", self.0)
+		"ArgumentError"
 	}
 
 	fn cause(&self) -> Option<&error::Error> {
@@ -314,7 +314,7 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	if !code_path.exists() {
 		return Err(ArgumentError("Code path doesn't seem to exist").into());
 	}
-	
+
 	let silent = args[2].clone();
 
 	if silent != "true" && silent != "false" {
