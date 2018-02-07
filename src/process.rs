@@ -96,7 +96,7 @@ pub fn kill_process_if(
 		if handle == INVALID_HANDLE_VALUE {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"could not open process",
+				"Failed to open process",
 			));
 		}
 
@@ -113,7 +113,7 @@ pub fn kill_process_if(
 
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"could not get process file name",
+				"Failed to get process file name",
 			));
 		}
 
@@ -126,17 +126,20 @@ pub fn kill_process_if(
 
 		info!(
 			log,
-			"Found running '{}', pid {}, attempting to kill...", process.name, process.id
+			"Found {} running, pid {}, attempting to kill...", process.name, process.id
 		);
 
 		if TerminateProcess(handle, 0) != TRUE {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"could not kill process",
+				"Failed to kill process",
 			));
 		}
 
-		info!(log, "Successfully killed {}", process.id);
+		info!(
+			log,
+			"Successfully killed {}, pid {}", process.name, process.id
+		);
 
 		CloseHandle(handle);
 		Ok(())
@@ -156,13 +159,13 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), io::Error> {
 
 	let mut attempt: u32 = 0;
 
-	// wait for 5 seconds until all Code processes are dead
+	// wait for 10 seconds until all processes are dead
 	loop {
 		attempt += 1;
 
 		info!(
 			log,
-			"Checking for running processes... (attempt {})", attempt
+			"Checking for running {} processes... (attempt {})", file_name, attempt
 		);
 
 		let processes: Vec<_> = get_running_processes()?
@@ -171,20 +174,20 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), io::Error> {
 			.collect();
 
 		if processes.len() == 0 {
-			info!(log, "Code is not running");
+			info!(log, "{} is not running", file_name);
 			break;
 		}
 
 		if attempt == 20 || processes.len() == 0 {
-			info!(log, "Gave up waiting for Code to exit");
+			info!(log, "Gave up waiting for {} to exit", file_name);
 			break;
 		}
 
-		info!(log, "Code is running, wait a bit");
-		thread::sleep(time::Duration::from_millis(250));
+		info!(log, "{} is running, wait a bit", file_name);
+		thread::sleep(time::Duration::from_millis(500));
 	}
 
-	// try to kill any running Code processes
+	// try to kill any running processes
 	util::retry(|_| {
 		let processes: Vec<_> = get_running_processes()?
 			.into_iter()

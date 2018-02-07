@@ -178,8 +178,6 @@ fn move_update(
 				Err(io::Error::new(io::ErrorKind::Other, "path still exists"))
 			}
 		})?;
-
-		info!(log, "Delete OK: {:?}", entry_name);
 	}
 
 	// move update to current
@@ -188,20 +186,19 @@ fn move_update(
 		let entry_name = entry.file_name();
 		let entry_name = entry_name.to_str().ok_or(io::Error::new(
 			io::ErrorKind::Other,
-			"could not get entry name",
+			"Could not get entry name",
 		))?;
 
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
 
-		info!(log, "rename: {:?}", entry_name);
-		util::retry(|_| {
-			info!(log, "attempt to rename: {:?}", entry_name);
+		util::retry(|attempt| {
+			info!(log, "Rename: {:?} (attempt {})", entry_name, attempt);
 			fs::rename(entry.path(), &target)
 		})?;
-		info!(log, "rename OK: {:?}", entry_name);
 	}
 
+	info!(log, "Delete: {:?}", update_path);
 	fs::remove_dir_all(update_path)
 }
 
