@@ -122,20 +122,6 @@ fn move_update(
 		));
 	}
 
-	// get the current exe name
-	let exe_path = env::current_exe()?;
-	let exe_name = exe_path
-		.file_name()
-		.ok_or(io::Error::new(
-			io::ErrorKind::Other,
-			"could not get current exe name",
-		))?
-		.to_str()
-		.ok_or(io::Error::new(
-			io::ErrorKind::Other,
-			"could not get current exe name as string",
-		))?;
-
 	// delete all current files
 	for entry in fs::read_dir(&root_path)? {
 		let entry = entry?;
@@ -156,7 +142,7 @@ fn move_update(
 		}
 
 		// don't delete ourselves
-		if entry_name == exe_name {
+		if entry_name == "tools" {
 			continue;
 		}
 
