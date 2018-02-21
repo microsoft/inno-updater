@@ -28,24 +28,6 @@ use std::vec::Vec;
 use slog::Drain;
 use model::{FileRec, Header};
 
-// MAIN
-
-// fn print_statistics(recs: &[FileRec]) {
-// 	use std::collections::HashMap;
-// 	let mut map: HashMap<u16, u32> = HashMap::new();
-
-// 	for rec in recs {
-// 		let count = map.entry(rec.typ as u16).or_insert(0);
-// 		*count += 1;
-// 	}
-
-// 	println!("Statistics");
-
-// 	for (k, c) in &map {
-// 		println!("records 0x{:x} {}", k, c);
-// 	}
-// }
-
 fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<error::Error>> {
 	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
@@ -359,13 +341,44 @@ Please attach the following log file to a new issue on GitHub:
 	}
 }
 
-fn main() {
-	let args: Vec<String> = env::args().filter(|a| !a.starts_with("--")).collect();
+fn parse(path: &Path) -> Result<(), Box<error::Error>> {
+	let (header, recs) = read_file(path)?;
 
-	if args.len() < 3 {
-		std::process::exit(1);
+	println!("{:?}", header);
+
+	use std::collections::HashMap;
+	let mut map: HashMap<u16, u32> = HashMap::new();
+
+	for rec in recs {
+		let count = map.entry(rec.typ as u16).or_insert(0);
+		*count += 1;
+	}
+
+	for (k, c) in &map {
+		println!("records 0x{:x} {}", k, c);
+	}
+
+	Ok(())
+}
+
+fn main() {
+	let args: Vec<String> = env::args().collect();
+
+	if args.len() == 3 && args[1] == "--parse" {
+		let path = PathBuf::from(&args[2]);
+		parse(&path).unwrap_or_else(|err| {
+			eprintln!("{}", err);
+			std::process::exit(1);
+		});
 	} else {
-		std::process::exit(__main(&args));
+		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
+
+		if args.len() < 3 {
+			eprintln!("Bad usage");
+			std::process::exit(1);
+		} else {
+			std::process::exit(__main(&args));
+		}
 	}
 }
 
