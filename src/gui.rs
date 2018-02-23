@@ -102,11 +102,11 @@ impl ProgressWindow {
 	}
 }
 
-pub fn create_progress_window() -> ProgressWindow {
+pub fn create_progress_window(hidden: bool) -> ProgressWindow {
 	use winapi::shared::windef::RECT;
 	use winapi::um::winuser::{CreateWindowExW, GetClientRect, GetDesktopWindow, GetWindowRect,
 	                          SendMessageW, SetWindowPos, ShowWindow, UpdateWindow, CW_USEDEFAULT,
-	                          HWND_TOPMOST, SW_SHOW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
+	                          HWND_TOPMOST, SW_HIDE, SW_SHOW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
 	                          WS_EX_COMPOSITED, WS_OVERLAPPED, WS_VISIBLE};
 	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::commctrl::{PBM_SETMARQUEE, PBS_MARQUEE, PROGRESS_CLASS};
@@ -137,7 +137,7 @@ pub fn create_progress_window() -> ProgressWindow {
 			panic!("Could not create window");
 		}
 
-		ShowWindow(window, SW_SHOW);
+		ShowWindow(window, if hidden {SW_HIDE} else {SW_SHOW});
 		UpdateWindow(window);
 
 		let mut rect: RECT = mem::uninitialized();

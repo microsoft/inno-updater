@@ -228,26 +228,22 @@ fn update(
 
 	info!(log, "Starting update, silent = {}", silent);
 
-	if silent {
-		do_update(log, code_path, update_folder_name)
-	} else {
-		let (tx, rx) = mpsc::channel();
+	let (tx, rx) = mpsc::channel();
 
-		thread::spawn(move || {
-			let window = gui::create_progress_window();
-			tx.send(window).unwrap();
+	thread::spawn(move || {
+		let window = gui::create_progress_window(silent);
+		tx.send(window).unwrap();
 
-			gui::event_loop();
-		});
+		gui::event_loop();
+	});
 
-		let window = rx.recv()
-			.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
+	let window = rx.recv()
+		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
 
-		do_update(&log, code_path, update_folder_name)?;
-		window.exit();
+	do_update(&log, code_path, update_folder_name)?;
+	window.exit();
 
-		Ok(())
-	}
+	Ok(())
 }
 
 #[derive(Debug, Clone)]
