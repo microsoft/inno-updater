@@ -5,13 +5,19 @@
 
 use std::{mem, ptr};
 use winapi::shared::windef::HWND;
-use winapi::shared::minwindef::{DWORD, LPARAM, LRESULT, UINT, WPARAM};
+use winapi::shared::ntdef::LPCWSTR;
+use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, LRESULT, UINT, WPARAM};
 use winapi::um::libloaderapi::GetModuleHandleW;
 use strings::to_utf16;
 
+extern "system" {
+	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
+	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
+}
+
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
 	use winapi::um::winuser::{BeginPaint, DefWindowProcW, EndPaint, PostQuitMessage, PAINTSTRUCT,
-	                          WM_DESTROY, WM_PAINT};
+	                          WM_CREATE, WM_DESTROY, WM_PAINT, WM_QUERYENDSESSION};
 	use winapi::um::wingdi::{GetStockObject, SelectObject, SetBkMode, TextOutW, ANSI_VAR_FONT,
 	                         TRANSPARENT};
 	use winapi::ctypes::c_int;
@@ -40,7 +46,13 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -
 
 			0
 		}
+		WM_CREATE => {
+			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
+			0
+		}
+		WM_QUERYENDSESSION => 0,
 		WM_DESTROY => {
+			ShutdownBlockReasonDestroy(hwnd);
 			PostQuitMessage(0);
 			0
 		}
