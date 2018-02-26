@@ -40,9 +40,9 @@ async function getLicenseFromRepository(repository) {
 
 async function getLicense(repository) {
 	try {
-		return await getLicenseFromAPI(repository);
-	} catch (err) {
 		return await getLicenseFromRepository(repository);
+	} catch (err) {
+		return await getLicenseFromAPI(repository);
 	}
 }
 
