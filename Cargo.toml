@@ -1,6 +1,6 @@
 [package]
 name = "inno_updater"
-version = "0.1.2"
+version = "0.2.0"
 authors = ["Microsoft <monacotools@microsoft.com>"]
 
 [dependencies]
