@@ -31,3 +31,16 @@ test: off
 artifacts:
   - path: inno_updater.zip
     name: Inno Updater
+
+deploy:
+  release: inno_updater-v$(appveyor_build_version)
+  description: 'Inno Updater'
+  provider: GitHub
+  auth_token:
+    secure: 2nTTfcrtyfyNmPghlEfIfz/z4OxaetWnofUKHnwp8/kUt6/D6KcpK3LfTx6CxFmo
+  artifact: inno_updater.zip
+  draft: false
+  prerelease: false
+  on:
+    branch: master
+    appveyor_repo_tag: true
