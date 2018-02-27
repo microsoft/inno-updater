@@ -33,7 +33,7 @@ artifacts:
     name: Inno Updater
 
 deploy:
-  release: inno_updater-v$(appveyor_build_version)
+  release: inno_updater-v$(APPVEYOR_REPO_TAG_NAME)
   description: 'Inno Updater'
   provider: GitHub
   auth_token:
