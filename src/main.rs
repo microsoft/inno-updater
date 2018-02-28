@@ -366,6 +366,15 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
+	} else if args.len() == 2 && args[1] == "--gui" {
+		let window = gui::create_progress_window(false);
+
+		thread::spawn(move || {
+			thread::sleep(std::time::Duration::from_secs(5));
+			window.exit();
+		});
+
+		gui::event_loop();
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 
@@ -377,14 +386,3 @@ fn main() {
 		}
 	}
 }
-
-// fn main() {
-// 	let window = gui::create_progress_window();
-
-// 	thread::spawn(move || {
-// 		thread::sleep(std::time::Duration::from_secs(5));
-// 		window.exit();
-// 	});
-
-// 	gui::event_loop();
-// }

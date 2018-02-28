@@ -16,8 +16,10 @@ extern "system" {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
-	use winapi::um::winuser::{BeginPaint, DefWindowProcW, EndPaint, PostQuitMessage, PAINTSTRUCT,
-	                          WM_CREATE, WM_DESTROY, WM_PAINT, WM_QUERYENDSESSION};
+	use winapi::um::winuser::{BeginPaint, DefWindowProcW, EndPaint, LoadIconW, PostQuitMessage,
+	                          SendMessageW, ICON_BIG, LPCREATESTRUCTW, MAKEINTRESOURCEW,
+	                          PAINTSTRUCT, WM_CREATE, WM_DESTROY, WM_PAINT, WM_QUERYENDSESSION,
+	                          WM_SETICON};
 	use winapi::um::wingdi::{GetStockObject, SelectObject, SetBkMode, TextOutW, ANSI_VAR_FONT,
 	                         TRANSPARENT};
 	use winapi::ctypes::c_int;
@@ -47,6 +49,15 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -
 			0
 		}
 		WM_CREATE => {
+			let h_instance = (*(l as LPCREATESTRUCTW)).hInstance;
+			let icon = LoadIconW(h_instance, MAKEINTRESOURCEW(0));
+
+			if icon == ptr::null_mut() {
+				eprintln!("Could not get icon");
+			} else {
+				SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
+			}
+
 			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
 			0
 		}
@@ -137,7 +148,7 @@ pub fn create_progress_window(hidden: bool) -> ProgressWindow {
 			panic!("Could not create window");
 		}
 
-		ShowWindow(window, if hidden {SW_HIDE} else {SW_SHOW});
+		ShowWindow(window, if hidden { SW_HIDE } else { SW_SHOW });
 		UpdateWindow(window);
 
 		let mut rect: RECT = mem::uninitialized();
