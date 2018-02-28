@@ -13,7 +13,7 @@ Please use the provided `cargo-build` and `cargo-run` commands instead of the de
 
 ## Integration
 
-⭐️ To create a new release, simply push a new tag. Tags will kick off [build](https://ci.appveyor.com/project/VSCode/inno-updater), which will publish [release](https://github.com/Microsoft/inno-updater/releases).
+⭐️ To create a new release, simply push a new tag; this will kick off a [build](https://ci.appveyor.com/project/VSCode/inno-updater) and publish a [release](https://github.com/Microsoft/inno-updater/releases).
 
 ⭐️ To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/Microsoft/vscode/tree/master/build/win32).
 
