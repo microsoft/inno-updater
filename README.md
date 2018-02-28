@@ -9,13 +9,13 @@ Helper utility to enable background updates for VS Code in Windows
 
 ## Development
 
-Please use the provided `cargo-build` and `cargo-run` commands instead of the default `cargo build` and `cargo run` ones. Note that `--release` will build it for the `i686-pc-windows-msvc` target, which is the only one we ship with VS Code.
+Please use the provided `cargo-build` and `cargo-run` commands instead of the default `cargo build` and `cargo run` ones. Note that `--release` will build for the `i686-pc-windows-msvc` target, which is the correct target to ship with VS Code.
 
 ## Integration
 
-Pushing a new tag to the repository will automatically [build](https://ci.appveyor.com/project/VSCode/inno-updater) and publish the correct binary as a [release](https://github.com/Microsoft/inno-updater/releases).
+⭐️ To create a new release, simply push a new tag. Tags will kick off [build](https://ci.appveyor.com/project/VSCode/inno-updater), which will publish [release](https://github.com/Microsoft/inno-updater/releases).
 
-To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/Microsoft/vscode/tree/master/build/win32).
+⭐️ To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/Microsoft/vscode/tree/master/build/win32).
 
 ## Contributing
 
