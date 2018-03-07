@@ -187,6 +187,8 @@ fn do_update(
 	let mut uninstdat_path = PathBuf::from(root_path);
 	uninstdat_path.push("unins000.dat");
 
+	move_update(&log, &uninstdat_path, &update_folder_name)?;
+
 	let (header, recs) = read_file(&uninstdat_path)?;
 
 	info!(log, "header: {:?}", header);
@@ -199,8 +201,6 @@ fn do_update(
 
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(&update_folder_name);
-
-	move_update(&log, &uninstdat_path, &update_folder_name)?;
 
 	let recs: Result<Vec<FileRec>, _> = recs
 		.iter()
