@@ -103,6 +103,7 @@ async function main(argv) {
 	}
 
 	if (argv['ossreadme']) {
+		ossreadme.sort((a, b) => { a.name < b.name ? -1 : 1 });
 		console.log(JSON.stringify(ossreadme, null, '\t'));
 	}
 
