@@ -172,23 +172,11 @@ fn move_update(
 	fs::remove_dir_all(update_path)
 }
 
-fn do_update(
+fn patch_uninstdat(
 	log: &slog::Logger,
-	code_path: &PathBuf,
+	uninstdat_path: &PathBuf,
 	update_folder_name: &str,
 ) -> Result<(), Box<error::Error>> {
-	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
-
-	let root_path = code_path.parent().ok_or(io::Error::new(
-		io::ErrorKind::Other,
-		"could not get parent path of uninstdat",
-	))?;
-
-	let mut uninstdat_path = PathBuf::from(root_path);
-	uninstdat_path.push("unins000.dat");
-
-	move_update(&log, &uninstdat_path, &update_folder_name)?;
-
 	let (header, recs) = read_file(&uninstdat_path)?;
 
 	info!(log, "header: {:?}", header);
@@ -214,6 +202,33 @@ fn do_update(
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, recs?)?;
+
+	Ok(())
+}
+
+fn do_update(
+	log: &slog::Logger,
+	code_path: &PathBuf,
+	update_folder_name: &str,
+) -> Result<(), Box<error::Error>> {
+	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
+
+	let root_path = code_path.parent().ok_or(io::Error::new(
+		io::ErrorKind::Other,
+		"could not get parent path of uninstdat",
+	))?;
+
+	let mut uninstdat_path = PathBuf::from(root_path);
+	uninstdat_path.push("unins000.dat");
+
+	move_update(log, &uninstdat_path, update_folder_name)?;
+
+	// if, for any reason, the uninstdat file is corrupt, let's continue silently
+	// https://github.com/Microsoft/vscode/issues/45607
+	patch_uninstdat(log, &uninstdat_path, update_folder_name).unwrap_or_else(|err| {
+		warn!(log, "Failed to patch uninst.dat file");
+		warn!(log, "{}", err);
+	});
 
 	Ok(())
 }
