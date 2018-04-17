@@ -3,12 +3,11 @@ const toml = require('toml');
 const fs = require('mz/fs');
 const pall = require('p-all');
 const minimist = require('minimist');
-const githubKey = '40f569379fda89ebb6390f6b0b1e54abab5ed0bf';
 
 async function getLicenseFromAPI(repository) {
 	const res = await got(`https://api.github.com/repos/${repository}/license`, {
 		json: true,
-		auth: githubKey,
+		auth: process.env['GITHUB_KEY'],
 		headers: {
 			Accept: 'application/vnd.github.v3+json'
 		}
@@ -18,7 +17,7 @@ async function getLicenseFromAPI(repository) {
 }
 
 async function getFileFromRepository(repository, file) {
-	const res = await got(`https://raw.githubusercontent.com/${repository}/master/${file}`, { auth: githubKey });
+	const res = await got(`https://raw.githubusercontent.com/${repository}/master/${file}`, { auth: process.env['GITHUB_KEY'] });
 	return res.body;
 }
 
