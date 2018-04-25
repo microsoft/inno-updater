@@ -86,7 +86,7 @@ fn kill_process_if(
 	use winapi::um::errhandlingapi::GetLastError;
 	use winapi::um::winbase::{FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM,
 	                          FORMAT_MESSAGE_IGNORE_INSERTS};
-	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
+	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 
 	unsafe {
@@ -96,7 +96,7 @@ fn kill_process_if(
 			process.id,
 		);
 
-		if handle == INVALID_HANDLE_VALUE {
+		if handle == ptr::null_mut() {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				"Failed to open process",
