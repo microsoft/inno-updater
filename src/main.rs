@@ -28,6 +28,8 @@ use std::vec::Vec;
 use slog::Drain;
 use model::{FileRec, Header};
 
+const VERSION: &'static str = env!("CARGO_PKG_VERSION");
+
 fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<error::Error>> {
 	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
@@ -241,6 +243,7 @@ fn update(
 ) -> Result<(), Box<error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
+	info!(log, "Inno Updater v{}", VERSION);
 	info!(log, "Starting update, silent = {}", silent);
 
 	let (tx, rx) = mpsc::channel();
@@ -394,7 +397,8 @@ fn main() {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 
 		if args.len() < 3 {
-			eprintln!("Bad usage");
+			eprintln!("Inno Update v{}", VERSION);
+			eprintln!("Error: Bad usage");
 			std::process::exit(1);
 		} else {
 			std::process::exit(__main(&args));
