@@ -178,7 +178,8 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), io::Error> {
 			break;
 		}
 
-		if attempt == 20 || processes.len() == 0 {
+		// give up after 60 * 500ms = 30 seconds
+		if attempt == 60 || processes.len() == 0 {
 			info!(log, "Gave up waiting for {} to exit", file_name);
 			break;
 		}
