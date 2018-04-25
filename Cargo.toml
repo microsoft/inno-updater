@@ -11,7 +11,7 @@ slog-async = "2.2.0"
 slog-term = "2.3.0"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi", "tlhelp32", "handleapi", "psapi"] }
+winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi", "tlhelp32", "handleapi", "psapi", "errhandlingapi", "winbase"] }
 
 [profile.release]
 lto = true

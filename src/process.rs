@@ -75,7 +75,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 /**
  * Kills a running process, if its path is the same as the provided one.
  */
-pub fn kill_process_if(
+fn kill_process_if(
 	log: &slog::Logger,
 	process: &RunningProcess,
 	path: &Path,
@@ -83,6 +83,9 @@ pub fn kill_process_if(
 	use winapi::shared::minwindef::MAX_PATH;
 	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 	use winapi::um::psapi::GetModuleFileNameExW;
+	use winapi::um::errhandlingapi::GetLastError;
+	use winapi::um::winbase::{FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM,
+	                          FORMAT_MESSAGE_IGNORE_INSERTS};
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 
@@ -111,9 +114,25 @@ pub fn kill_process_if(
 		if len == 0 {
 			CloseHandle(handle);
 
+			let mut error_message = [0u16; 32000];
+			let error_message_len = FormatMessageW(
+				FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+				ptr::null_mut(),
+				GetLastError(),
+				0,
+				error_message.as_mut_ptr(),
+				32000,
+				ptr::null_mut(),
+			) as usize;
+
+			let message = match error_message_len {
+				0 => String::from("unknown error"),
+				_ => from_utf16(&error_message[0..error_message_len])?,
+			};
+
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"Failed to get process file name",
+				format!("Failed to get process file name: {}", message),
 			));
 		}
 
