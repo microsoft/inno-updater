@@ -112,6 +112,11 @@ fn kill_process_if(
 	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 
+	info!(
+		log,
+		"Kill process if found: {}, {}", process.id, process.name
+	);
+
 	unsafe {
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
 		let handle = OpenProcess(
@@ -221,19 +226,26 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Er
 
 	// try to kill any running processes
 	util::retry(
-		|_| {
-			let processes: Vec<_> = get_running_processes()?
+		|attempt| {
+			info!(
+				log,
+				"Checking for possible conflicting running processes... (attempt {})", attempt
+			);
+
+			let kill_errors: Vec<_> = get_running_processes()?
 				.into_iter()
 				.filter(|p| p.name == file_name)
+				.filter_map(|p| kill_process_if(log, &p, path).err())
 				.collect();
 
-			if processes.len() > 0 {
-				for process in processes {
-					kill_process_if(log, &process, path)?;
-				}
+			for err in &kill_errors {
+				warn!(log, "Kill error {}", err);
 			}
 
-			Ok(())
+			match kill_errors.len() {
+				0 => Ok(()),
+				_ => Err(kill_errors.into_iter().nth(1).unwrap()),
+			}
 		},
 		None,
 	)
