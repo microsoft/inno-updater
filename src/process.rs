@@ -3,7 +3,7 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{io, mem, ptr, thread, time};
+use std::{error, io, mem, ptr, thread, time};
 use std::path::{Path, PathBuf};
 use winapi::shared::minwindef::{DWORD, TRUE};
 use strings::from_utf16;
@@ -72,6 +72,32 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	}
 }
 
+fn get_last_error_message() -> Result<String, Box<error::Error>> {
+	use winapi::um::errhandlingapi::GetLastError;
+	use winapi::um::winbase::{FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM,
+	                          FORMAT_MESSAGE_IGNORE_INSERTS};
+
+	let mut error_message = [0u16; 32000];
+	let error_message_len: usize;
+
+	unsafe {
+		error_message_len = FormatMessageW(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			ptr::null_mut(),
+			GetLastError(),
+			0,
+			error_message.as_mut_ptr(),
+			32000,
+			ptr::null_mut(),
+		) as usize;
+	}
+
+	Ok(match error_message_len {
+		0 => String::from("unknown error"),
+		_ => from_utf16(&error_message[0..error_message_len])?,
+	})
+}
+
 /**
  * Kills a running process, if its path is the same as the provided one.
  */
@@ -79,17 +105,15 @@ fn kill_process_if(
 	log: &slog::Logger,
 	process: &RunningProcess,
 	path: &Path,
-) -> Result<(), io::Error> {
+) -> Result<(), Box<error::Error>> {
 	use winapi::shared::minwindef::MAX_PATH;
 	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 	use winapi::um::psapi::GetModuleFileNameExW;
-	use winapi::um::errhandlingapi::GetLastError;
-	use winapi::um::winbase::{FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM,
-	                          FORMAT_MESSAGE_IGNORE_INSERTS};
 	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 
 	unsafe {
+		// https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
 		let handle = OpenProcess(
 			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE,
 			0,
@@ -97,10 +121,12 @@ fn kill_process_if(
 		);
 
 		if handle == ptr::null_mut() {
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				"Failed to open process",
-			));
+			return Err(
+				io::Error::new(
+					io::ErrorKind::Other,
+					format!("Failed to open process: {}", get_last_error_message()?),
+				).into(),
+			);
 		}
 
 		let mut raw_path = [0u16; MAX_PATH];
@@ -114,26 +140,15 @@ fn kill_process_if(
 		if len == 0 {
 			CloseHandle(handle);
 
-			let mut error_message = [0u16; 32000];
-			let error_message_len = FormatMessageW(
-				FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-				ptr::null_mut(),
-				GetLastError(),
-				0,
-				error_message.as_mut_ptr(),
-				32000,
-				ptr::null_mut(),
-			) as usize;
-
-			let message = match error_message_len {
-				0 => String::from("unknown error"),
-				_ => from_utf16(&error_message[0..error_message_len])?,
-			};
-
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				format!("Failed to get process file name: {}", message),
-			));
+			return Err(
+				io::Error::new(
+					io::ErrorKind::Other,
+					format!(
+						"Failed to get process file name: {}",
+						get_last_error_message()?
+					),
+				).into(),
+			);
 		}
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
@@ -149,10 +164,7 @@ fn kill_process_if(
 		);
 
 		if TerminateProcess(handle, 0) != TRUE {
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				"Failed to kill process",
-			));
+			return Err(io::Error::new(io::ErrorKind::Other, "Failed to kill process").into());
 		}
 
 		info!(
@@ -165,7 +177,7 @@ fn kill_process_if(
 	}
 }
 
-pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), io::Error> {
+pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Error>> {
 	let file_name = path.file_name().ok_or(io::Error::new(
 		io::ErrorKind::Other,
 		"could not get process file name",
