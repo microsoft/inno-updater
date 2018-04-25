@@ -6,13 +6,23 @@
 use std::{thread, time};
 
 /**
- * Quadratic backoff retry mechanism
+ * Quadratic backoff retry mechanism.
+ *
+ * Use `max_attempts` to control how long it should retry for:
+ * 	- 10 (default): 19s
+ *  - 15: ~1 minute
+ *  - 19: ~2 minutes
+ *  - 22: ~3 minutes
+ *  - 24: ~4 minutes
+ *  - 26: ~5 minutes
  */
-pub fn retry<F, R, E>(closure: F) -> Result<R, E>
+pub fn retry<F, R, E, T>(closure: F, max_attempts: T) -> Result<R, E>
 where
 	F: Fn(u32) -> Result<R, E>,
+	T: Into<Option<u32>>,
 {
 	let mut attempt: u32 = 0;
+	let max_attempts = max_attempts.into().unwrap_or(10);
 
 	loop {
 		attempt += 1;
@@ -21,7 +31,7 @@ where
 		match result {
 			Ok(_) => return result,
 			Err(_) => {
-				if attempt > 10 {
+				if attempt > max_attempts {
 					return result;
 				}
 

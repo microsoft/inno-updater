@@ -220,18 +220,21 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Er
 	}
 
 	// try to kill any running processes
-	util::retry(|_| {
-		let processes: Vec<_> = get_running_processes()?
-			.into_iter()
-			.filter(|p| p.name == file_name)
-			.collect();
+	util::retry(
+		|_| {
+			let processes: Vec<_> = get_running_processes()?
+				.into_iter()
+				.filter(|p| p.name == file_name)
+				.collect();
 
-		if processes.len() > 0 {
-			for process in processes {
-				kill_process_if(log, &process, path)?;
+			if processes.len() > 0 {
+				for process in processes {
+					kill_process_if(log, &process, path)?;
+				}
 			}
-		}
 
-		Ok(())
-	})
+			Ok(())
+		},
+		None,
+	)
 }

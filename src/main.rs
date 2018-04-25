@@ -83,7 +83,7 @@ fn move_update(
 	log: &slog::Logger,
 	uninstdat_path: &Path,
 	update_folder_name: &str,
-) -> Result<(), io::Error> {
+) -> Result<(), Box<error::Error>> {
 	info!(
 		log,
 		"move_update: {:?}, {}", uninstdat_path, update_folder_name
@@ -100,10 +100,7 @@ fn move_update(
 	let stat = fs::metadata(&update_path)?;
 
 	if !stat.is_dir() {
-		return Err(io::Error::new(
-			io::ErrorKind::Other,
-			"Update folder is not a directory",
-		));
+		return Err(io::Error::new(io::ErrorKind::Other, "Update folder is not a directory").into());
 	}
 
 	// delete all current files
@@ -130,26 +127,33 @@ fn move_update(
 			continue;
 		}
 
+		let entry_file_type = entry.file_type()?;
+		let entry_path = entry.path();
+
+		let max_attempts = match entry_file_type.is_file() {
+			true => None,
+			false => Some(26), // wait longer if folder
+		};
+
 		// attempt to delete
-		util::retry(|attempt| {
-			let entry_file_type = entry.file_type()?;
-			let entry_path = entry.path();
+		util::retry(
+			|attempt| -> Result<(), Box<error::Error>> {
+				if !entry_path.exists() {
+					return Ok(());
+				}
 
-			info!(log, "Delete: {:?} (attempt {})", entry_name, attempt);
+				info!(log, "Delete: {:?} (attempt {})", entry_name, attempt);
 
-			if entry_file_type.is_file() {
-				fs::remove_file(&entry_path)?;
-			} else {
-				fs::remove_dir_all(&entry_path)?;
-			}
+				if entry_file_type.is_file() {
+					fs::remove_file(&entry_path)?;
+				} else {
+					fs::remove_dir_all(&entry_path)?;
+				}
 
-			if !entry_path.exists() {
 				Ok(())
-			} else {
-				warn!(log, "Path still exists: {:?}", entry_name);
-				Err(io::Error::new(io::ErrorKind::Other, "path still exists"))
-			}
-		})?;
+			},
+			max_attempts,
+		)?;
 	}
 
 	// move update to current
@@ -164,14 +168,19 @@ fn move_update(
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
 
-		util::retry(|attempt| {
-			info!(log, "Rename: {:?} (attempt {})", entry_name, attempt);
-			fs::rename(entry.path(), &target)
-		})?;
+		util::retry(
+			|attempt| {
+				info!(log, "Rename: {:?} (attempt {})", entry_name, attempt);
+				fs::rename(entry.path(), &target)
+			},
+			None,
+		)?;
 	}
 
 	info!(log, "Delete: {:?}", update_path);
-	fs::remove_dir_all(update_path)
+	fs::remove_dir_all(update_path)?;
+
+	Ok(())
 }
 
 fn patch_uninstdat(
