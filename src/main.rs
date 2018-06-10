@@ -400,7 +400,7 @@ fn main() {
 
 		let window = rx.recv().unwrap();
 
-		thread::sleep(std::time::Duration::from_secs((5)));
+		thread::sleep(std::time::Duration::from_secs(5));
 		window.exit();
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
