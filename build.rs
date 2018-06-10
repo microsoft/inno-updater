@@ -1,7 +1,7 @@
 use std::process::Command;
 
 fn main() {
-    let mut rc = Command::new(/*".\\tools\\rc.exe"*/"rc.exe")
+    let mut rc = Command::new(".\\tools\\rc.exe")
                          .arg("/r")
                          .arg("/fo")
                          .arg(".\\resources\\resources.lib")
