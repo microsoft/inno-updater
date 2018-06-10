@@ -259,10 +259,7 @@ fn update(
 	let (tx, rx) = mpsc::channel();
 
 	thread::spawn(move || {
-		let window = gui::create_progress_window(silent);
-		tx.send(window).unwrap();
-
-		gui::event_loop();
+		gui::run_progress_window(silent, tx);
 	});
 
 	let window = rx.recv()
@@ -395,14 +392,16 @@ fn main() {
 			std::process::exit(1);
 		});
 	} else if args.len() == 2 && args[1] == "--gui" {
-		let window = gui::create_progress_window(false);
+		let (tx, rx) = mpsc::channel();
 
 		thread::spawn(move || {
-			thread::sleep(std::time::Duration::from_secs(5));
-			window.exit();
+			gui::run_progress_window(false, tx);
 		});
 
-		gui::event_loop();
+		let window = rx.recv().unwrap();
+
+		thread::sleep(std::time::Duration::from_secs((5)));
+		window.exit();
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 

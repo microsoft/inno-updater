@@ -1,1 +1,17 @@
 101 ICON "code.ico"
+
+1001 DIALOGEX 0, 0, 187, 55
+// 72== DS_SHELLFONT
+// 80 == DS_MODALFRAME
+// 4 == DS_3DLOOK
+// 2147483648 == WS_POPUP
+// 12582912 == WS_CAPTION
+STYLE 72 | 80 | 4 | 2147483648 | 12582912
+CAPTION "VS Code"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    LTEXT           "Updating VS Code...",-1,11,10,66,8
+    // 8 == PBS_MARQUEE
+    // 8388608 == WS_BORDER
+    CONTROL         "",10001,"msctls_progress32",8 | 8388608,11,27,165,14
+END

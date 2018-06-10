@@ -4,10 +4,11 @@
  *----------------------------------------------------------------------------------------*/
 
 use std::{mem, ptr};
+use std::sync::mpsc::Sender;
 use winapi::shared::windef::HWND;
 use winapi::shared::ntdef::LPCWSTR;
-use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, LRESULT, UINT, WPARAM};
-use winapi::um::libloaderapi::GetModuleHandleW;
+use winapi::shared::basetsd::INT_PTR;
+use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, UINT, WPARAM};
 use strings::to_utf16;
 
 extern "system" {
@@ -15,64 +16,56 @@ extern "system" {
 	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
 
-unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
-	use winapi::um::winuser::{DefWindowProcW, PostQuitMessage,
-	                          WM_CREATE, WM_DESTROY, WM_QUERYENDSESSION};
+struct DialogData {
+	silent: bool,
+	tx: Sender<ProgressWindow>,
+}
+
+unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -> INT_PTR {
+	use resources;
+	use winapi::shared::windef::RECT;
+	use winapi::um::winuser::{GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
+	                          HWND_TOPMOST, SW_HIDE, WM_INITDIALOG, WM_DESTROY};
+	use winapi::um::processthreadsapi::GetCurrentThreadId;
+	use winapi::um::commctrl::PBM_SETMARQUEE;
 
 	match msg {
-		WM_CREATE => {
+		WM_INITDIALOG => {
+			let data = &*(l as *const DialogData);
+			if !data.silent {
+				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, PBM_SETMARQUEE, 1, 0);
+
+				let mut rect: RECT = mem::uninitialized();
+				GetWindowRect(hwnd, &mut rect);
+
+				let width = rect.right - rect.left;
+				let height = rect.bottom - rect.top;
+
+				GetWindowRect(GetDesktopWindow(), &mut rect);
+
+				SetWindowPos(
+					hwnd,
+					HWND_TOPMOST,
+					rect.right / 2 - width / 2,
+					rect.bottom / 2 - height / 2,
+					width,
+					height,
+					0,
+				);
+			} else {
+				ShowWindow(hwnd, SW_HIDE);
+			}
+
+			data.tx.send(ProgressWindow { ui_thread_id: GetCurrentThreadId() }).unwrap();
+
 			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
 			0
 		}
-		WM_QUERYENDSESSION => 0,
 		WM_DESTROY => {
 			ShutdownBlockReasonDestroy(hwnd);
-			PostQuitMessage(0);
 			0
 		}
-		_ => DefWindowProcW(hwnd, msg, w, l),
-	}
-}
-
-unsafe fn create_window_class(name: *const u16) {
-	use resources;
-	use winapi::um::winuser::{LoadCursorW, RegisterClassExW, COLOR_WINDOW,
-	                          CS_HREDRAW, CS_VREDRAW, IDC_ARROW, MAKEINTRESOURCEW, WNDCLASSEXW};
-
-	use winapi::um::commctrl::{LoadIconMetric, LIM_SMALL, LIM_LARGE};
-	use winapi::shared::winerror::SUCCEEDED;
-
-	let h_instance = GetModuleHandleW(ptr::null_mut());
-
-	let mut class = WNDCLASSEXW {
-		cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
-		style: CS_HREDRAW | CS_VREDRAW,
-		lpfnWndProc: Some(wndproc),
-		cbClsExtra: 0,
-		cbWndExtra: 0,
-		hInstance: h_instance,
-		hIcon: ptr::null_mut(),
-		hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
-		hbrBackground: mem::transmute(COLOR_WINDOW as usize),
-		lpszMenuName: ptr::null_mut(),
-		lpszClassName: name,
-		hIconSm: ptr::null_mut(),
-	};
-
-	let mut hresult = LoadIconMetric(h_instance, MAKEINTRESOURCEW(resources::ICON_CODE), LIM_LARGE as i32, &mut class.hIcon);
-	if !SUCCEEDED(hresult) {
-		eprintln!("Could not get large icon");
-	}
-
-	hresult = LoadIconMetric(h_instance, MAKEINTRESOURCEW(resources::ICON_CODE), LIM_SMALL as i32, &mut class.hIconSm);
-	if !SUCCEEDED(hresult) {
-		eprintln!("Could not get small icon");
-	}
-
-	let result = RegisterClassExW(&class);
-
-	if result == 0 {
-		panic!("Could not create window");
+		_ => 0,
 	}
 }
 
@@ -92,95 +85,21 @@ impl ProgressWindow {
 	}
 }
 
-pub fn create_progress_window(hidden: bool) -> ProgressWindow {
-	use winapi::shared::windef::RECT;
-	use winapi::um::winuser::{CreateWindowExW, GetClientRect, GetDesktopWindow, GetWindowRect,
-	                          SendMessageW, SetWindowPos, ShowWindow, UpdateWindow, CW_USEDEFAULT,
-	                          HWND_TOPMOST, SW_HIDE, SW_SHOW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
-	                          WS_EX_COMPOSITED, WS_OVERLAPPED, WS_VISIBLE};
-	use winapi::um::processthreadsapi::GetCurrentThreadId;
-	use winapi::um::commctrl::{PBM_SETMARQUEE, PBS_MARQUEE, PROGRESS_CLASS};
+pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
+	use resources;
+	use winapi::um::winuser::{DialogBoxParamW, MAKEINTRESOURCEW};
+	use winapi::um::libloaderapi::GetModuleHandleW;
+
+	let data = DialogData { silent, tx };
 
 	unsafe {
-		let class_name = to_utf16("mainclass").as_ptr();
-		create_window_class(class_name);
-
-		let width = 280;
-		let height = 90;
-
-		let window = CreateWindowExW(
-			WS_EX_COMPOSITED,
-			class_name,
-			to_utf16("VS Code").as_ptr(),
-			WS_OVERLAPPED | WS_CAPTION | WS_CLIPCHILDREN,
-			CW_USEDEFAULT,
-			CW_USEDEFAULT,
-			width,
-			height,
+		DialogBoxParamW(
+			GetModuleHandleW(ptr::null_mut()),
+			MAKEINTRESOURCEW(resources::PROGRESS_DIALOG),
 			ptr::null_mut(),
-			ptr::null_mut(),
-			GetModuleHandleW(ptr::null()),
-			ptr::null_mut(),
+			Some(dlgproc),
+			(&data as *const DialogData) as LPARAM
 		);
-
-		if window.is_null() {
-			panic!("Could not create window");
-		}
-
-		ShowWindow(window, if hidden { SW_HIDE } else { SW_SHOW });
-		UpdateWindow(window);
-
-		let mut rect: RECT = mem::uninitialized();
-		GetClientRect(window, &mut rect);
-
-		let width = width + width - rect.right;
-		let height = height + height - rect.bottom;
-
-		let desktop_window = GetDesktopWindow();
-		GetWindowRect(desktop_window, &mut rect);
-
-		SetWindowPos(
-			window,
-			HWND_TOPMOST,
-			rect.right / 2 - width / 2,
-			rect.bottom / 2 - height / 2,
-			width,
-			height,
-			0,
-		);
-
-		let pbar = CreateWindowExW(
-			0,
-			to_utf16(PROGRESS_CLASS).as_ptr(),
-			ptr::null(),
-			WS_CHILD | WS_VISIBLE | PBS_MARQUEE,
-			15,
-			45,
-			250,
-			22,
-			window,
-			ptr::null_mut(),
-			GetModuleHandleW(ptr::null()),
-			ptr::null_mut(),
-		);
-
-		SendMessageW(pbar, PBM_SETMARQUEE, 1, 0);
-
-		let ui_thread_id = GetCurrentThreadId();
-		ProgressWindow { ui_thread_id }
-	}
-}
-
-pub fn event_loop() {
-	use winapi::um::winuser::{DispatchMessageW, GetMessageW, TranslateMessage, MSG};
-
-	unsafe {
-		let mut msg: MSG = mem::uninitialized();
-
-		while GetMessageW(&mut msg, ptr::null_mut(), 0, 0) != 0 {
-			TranslateMessage(&msg);
-			DispatchMessageW(&msg);
-		}
 	}
 }
 
