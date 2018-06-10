@@ -18,6 +18,7 @@ mod strings;
 mod model;
 mod gui;
 mod process;
+mod resources;
 mod util;
 
 use std::{env, error, fmt, fs, io, thread};

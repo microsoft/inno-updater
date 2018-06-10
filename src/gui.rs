@@ -16,48 +16,11 @@ extern "system" {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
-	use winapi::um::winuser::{BeginPaint, DefWindowProcW, EndPaint, LoadIconW, PostQuitMessage,
-	                          SendMessageW, ICON_BIG, LPCREATESTRUCTW, MAKEINTRESOURCEW,
-	                          PAINTSTRUCT, WM_CREATE, WM_DESTROY, WM_PAINT, WM_QUERYENDSESSION,
-	                          WM_SETICON};
-	use winapi::um::wingdi::{GetStockObject, SelectObject, SetBkMode, TextOutW, ANSI_VAR_FONT,
-	                         TRANSPARENT};
-	use winapi::ctypes::c_int;
+	use winapi::um::winuser::{DefWindowProcW, PostQuitMessage,
+	                          WM_CREATE, WM_DESTROY, WM_QUERYENDSESSION};
 
 	match msg {
-		WM_PAINT => {
-			let mut ps = PAINTSTRUCT {
-				hdc: mem::uninitialized(),
-				fErase: 0,
-				rcPaint: mem::uninitialized(),
-				fRestore: 0,
-				fIncUpdate: 0,
-				rgbReserved: [0; 32],
-			};
-
-			let hdc = BeginPaint(hwnd, &mut ps);
-			SetBkMode(hdc, TRANSPARENT as c_int);
-
-			let font = GetStockObject(ANSI_VAR_FONT as c_int);
-			SelectObject(hdc, font);
-
-			let text = to_utf16("Updating VS Code...");
-			TextOutW(hdc, 15, 15, text.as_ptr(), text.len() as c_int);
-
-			EndPaint(hwnd, &ps);
-
-			0
-		}
 		WM_CREATE => {
-			let h_instance = (*(l as LPCREATESTRUCTW)).hInstance;
-			let icon = LoadIconW(h_instance, MAKEINTRESOURCEW(0));
-
-			if icon == ptr::null_mut() {
-				eprintln!("Could not get icon");
-			} else {
-				SendMessageW(hwnd, WM_SETICON, ICON_BIG as usize, icon as isize);
-			}
-
 			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
 			0
 		}
@@ -72,16 +35,22 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -
 }
 
 unsafe fn create_window_class(name: *const u16) {
-	use winapi::um::winuser::{LoadCursorW, RegisterClassExW, COLOR_WINDOW, CS_HREDRAW, CS_VREDRAW,
-	                          IDC_ARROW, WNDCLASSEXW};
+	use resources;
+	use winapi::um::winuser::{LoadCursorW, RegisterClassExW, COLOR_WINDOW,
+	                          CS_HREDRAW, CS_VREDRAW, IDC_ARROW, MAKEINTRESOURCEW, WNDCLASSEXW};
 
-	let class = WNDCLASSEXW {
+	use winapi::um::commctrl::{LoadIconMetric, LIM_SMALL, LIM_LARGE};
+	use winapi::shared::winerror::SUCCEEDED;
+
+	let h_instance = GetModuleHandleW(ptr::null_mut());
+
+	let mut class = WNDCLASSEXW {
 		cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
 		style: CS_HREDRAW | CS_VREDRAW,
 		lpfnWndProc: Some(wndproc),
 		cbClsExtra: 0,
 		cbWndExtra: 0,
-		hInstance: GetModuleHandleW(ptr::null_mut()),
+		hInstance: h_instance,
 		hIcon: ptr::null_mut(),
 		hCursor: LoadCursorW(ptr::null_mut(), IDC_ARROW),
 		hbrBackground: mem::transmute(COLOR_WINDOW as usize),
@@ -89,6 +58,16 @@ unsafe fn create_window_class(name: *const u16) {
 		lpszClassName: name,
 		hIconSm: ptr::null_mut(),
 	};
+
+	let mut hresult = LoadIconMetric(h_instance, MAKEINTRESOURCEW(resources::ICON_CODE), LIM_LARGE as i32, &mut class.hIcon);
+	if !SUCCEEDED(hresult) {
+		eprintln!("Could not get large icon");
+	}
+
+	hresult = LoadIconMetric(h_instance, MAKEINTRESOURCEW(resources::ICON_CODE), LIM_SMALL as i32, &mut class.hIconSm);
+	if !SUCCEEDED(hresult) {
+		eprintln!("Could not get small icon");
+	}
 
 	let result = RegisterClassExW(&class);
 
