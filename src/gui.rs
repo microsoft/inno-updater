@@ -4,11 +4,11 @@
  *----------------------------------------------------------------------------------------*/
 
 use std::{mem, ptr};
-use winapi::shared::windef::HWND;
-use winapi::shared::ntdef::LPCWSTR;
-use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, LRESULT, UINT, WPARAM};
-use winapi::um::libloaderapi::GetModuleHandleW;
 use strings::to_utf16;
+use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, LRESULT, UINT, WPARAM};
+use winapi::shared::ntdef::LPCWSTR;
+use winapi::shared::windef::HWND;
+use winapi::um::libloaderapi::GetModuleHandleW;
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
@@ -16,13 +16,15 @@ extern "system" {
 }
 
 unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -> LRESULT {
-	use winapi::um::winuser::{BeginPaint, DefWindowProcW, EndPaint, LoadIconW, PostQuitMessage,
-	                          SendMessageW, ICON_BIG, LPCREATESTRUCTW, MAKEINTRESOURCEW,
-	                          PAINTSTRUCT, WM_CREATE, WM_DESTROY, WM_PAINT, WM_QUERYENDSESSION,
-	                          WM_SETICON};
-	use winapi::um::wingdi::{GetStockObject, SelectObject, SetBkMode, TextOutW, ANSI_VAR_FONT,
-	                         TRANSPARENT};
 	use winapi::ctypes::c_int;
+	use winapi::um::wingdi::{
+		GetStockObject, SelectObject, SetBkMode, TextOutW, ANSI_VAR_FONT, TRANSPARENT,
+	};
+	use winapi::um::winuser::{
+		BeginPaint, DefWindowProcW, EndPaint, LoadIconW, PostQuitMessage, SendMessageW, ICON_BIG,
+		LPCREATESTRUCTW, MAKEINTRESOURCEW, PAINTSTRUCT, WM_CREATE, WM_DESTROY, WM_PAINT,
+		WM_QUERYENDSESSION, WM_SETICON,
+	};
 
 	match msg {
 		WM_PAINT => {
@@ -72,8 +74,9 @@ unsafe extern "system" fn wndproc(hwnd: HWND, msg: UINT, w: WPARAM, l: LPARAM) -
 }
 
 unsafe fn create_window_class(name: *const u16) {
-	use winapi::um::winuser::{LoadCursorW, RegisterClassExW, COLOR_WINDOW, CS_HREDRAW, CS_VREDRAW,
-	                          IDC_ARROW, WNDCLASSEXW};
+	use winapi::um::winuser::{
+		LoadCursorW, RegisterClassExW, COLOR_WINDOW, CS_HREDRAW, CS_VREDRAW, IDC_ARROW, WNDCLASSEXW,
+	};
 
 	let class = WNDCLASSEXW {
 		cbSize: mem::size_of::<WNDCLASSEXW>() as UINT,
@@ -115,12 +118,13 @@ impl ProgressWindow {
 
 pub fn create_progress_window(hidden: bool) -> ProgressWindow {
 	use winapi::shared::windef::RECT;
-	use winapi::um::winuser::{CreateWindowExW, GetClientRect, GetDesktopWindow, GetWindowRect,
-	                          SendMessageW, SetWindowPos, ShowWindow, UpdateWindow, CW_USEDEFAULT,
-	                          HWND_TOPMOST, SW_HIDE, SW_SHOW, WS_CAPTION, WS_CHILD, WS_CLIPCHILDREN,
-	                          WS_EX_COMPOSITED, WS_OVERLAPPED, WS_VISIBLE};
-	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::commctrl::{PBM_SETMARQUEE, PBS_MARQUEE, PROGRESS_CLASS};
+	use winapi::um::processthreadsapi::GetCurrentThreadId;
+	use winapi::um::winuser::{
+		CreateWindowExW, GetClientRect, GetDesktopWindow, GetWindowRect, SendMessageW, SetWindowPos,
+		ShowWindow, UpdateWindow, CW_USEDEFAULT, HWND_TOPMOST, SW_HIDE, SW_SHOW, WS_CAPTION, WS_CHILD,
+		WS_CLIPCHILDREN, WS_EX_COMPOSITED, WS_OVERLAPPED, WS_VISIBLE,
+	};
 
 	unsafe {
 		let class_name = to_utf16("mainclass").as_ptr();

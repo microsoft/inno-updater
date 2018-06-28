@@ -14,19 +14,19 @@ extern crate slog_term;
 extern crate winapi;
 
 mod blockio;
-mod strings;
-mod model;
 mod gui;
+mod model;
 mod process;
+mod strings;
 mod util;
 
-use std::{env, error, fmt, fs, io, thread};
+use model::{FileRec, Header};
+use slog::Drain;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::io::prelude::*;
 use std::vec::Vec;
-use slog::Drain;
-use model::{FileRec, Header};
+use std::{env, error, fmt, fs, io, thread};
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 

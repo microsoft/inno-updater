@@ -3,8 +3,8 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-mod header;
 mod filerec;
+mod header;
 
-pub use self::header::*;
 pub use self::filerec::*;
+pub use self::header::*;

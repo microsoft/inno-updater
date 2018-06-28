@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
+use crc::{crc32, Hasher32};
 use std::cmp;
 use std::io;
 use std::io::prelude::*;
-use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crc::{Hasher32, crc32};
 
 const BLOCK_MAX_SIZE: usize = 4096;
 

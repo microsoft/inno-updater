@@ -4,8 +4,8 @@
  *----------------------------------------------------------------------------------------*/
 
 use std::io;
-use std::string;
 use std::io::prelude::*;
+use std::string;
 
 #[derive(Debug)]
 pub enum ReadUtf8StringError {
@@ -42,8 +42,8 @@ pub fn write_utf8_string(
 
 pub fn to_utf16(value: &str) -> Vec<u16> {
 	use std::ffi::OsStr;
-	use std::os::windows::ffi::OsStrExt;
 	use std::iter::once;
+	use std::os::windows::ffi::OsStrExt;
 
 	OsStr::new(value).encode_wide().chain(once(0u16)).collect()
 }
