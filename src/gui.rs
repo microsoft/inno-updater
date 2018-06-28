@@ -210,14 +210,30 @@ pub fn event_loop() {
 }
 
 pub fn message_box(text: &str, caption: &str) -> i32 {
-	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR};
+	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_SYSTEMMODAL};
 
 	unsafe {
 		MessageBoxW(
 			ptr::null_mut(),
 			to_utf16(text).as_ptr(),
 			to_utf16(caption).as_ptr(),
-			MB_ICONERROR,
+			MB_ICONERROR | MB_SYSTEMMODAL,
 		)
+	}
+}
+
+pub fn open_url(url: &str) {
+	use winapi::um::shellapi::ShellExecuteW;
+	use winapi::um::winuser::SW_SHOWNORMAL;
+
+	unsafe {
+		ShellExecuteW(
+			ptr::null_mut(),
+			to_utf16("open").as_ptr(),
+			to_utf16(url).as_ptr(),
+			ptr::null_mut(),
+			ptr::null_mut(),
+			SW_SHOWNORMAL,
+		);
 	}
 }
