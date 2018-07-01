@@ -17,11 +17,8 @@ mod blockio;
 mod gui;
 mod model;
 mod process;
-<<<<<<< HEAD
 mod resources;
-=======
 mod strings;
->>>>>>> ca49269d0457802f9030ef51be7a48da56f7e35c
 mod util;
 
 use model::{FileRec, Header};
