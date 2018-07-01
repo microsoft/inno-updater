@@ -10,6 +10,7 @@ use winapi::shared::basetsd::INT_PTR;
 use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, UINT, WPARAM};
 use winapi::shared::ntdef::LPCWSTR;
 use winapi::shared::windef::HWND;
+use winapi::um::libloaderapi::GetModuleHandleW;
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
