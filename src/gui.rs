@@ -5,11 +5,11 @@
 
 use std::{mem, ptr};
 use std::sync::mpsc::Sender;
-use winapi::shared::windef::HWND;
-use winapi::shared::ntdef::LPCWSTR;
+use strings::to_utf16;
 use winapi::shared::basetsd::INT_PTR;
 use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, UINT, WPARAM};
-use strings::to_utf16;
+use winapi::shared::ntdef::LPCWSTR;
+use winapi::shared::windef::HWND;
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
@@ -104,14 +104,30 @@ pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 }
 
 pub fn message_box(text: &str, caption: &str) -> i32 {
-	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR};
+	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_SYSTEMMODAL};
 
 	unsafe {
 		MessageBoxW(
 			ptr::null_mut(),
 			to_utf16(text).as_ptr(),
 			to_utf16(caption).as_ptr(),
-			MB_ICONERROR,
+			MB_ICONERROR | MB_SYSTEMMODAL,
 		)
+	}
+}
+
+pub fn open_url(url: &str) {
+	use winapi::um::shellapi::ShellExecuteW;
+	use winapi::um::winuser::SW_SHOWNORMAL;
+
+	unsafe {
+		ShellExecuteW(
+			ptr::null_mut(),
+			to_utf16("open").as_ptr(),
+			to_utf16(url).as_ptr(),
+			ptr::null_mut(),
+			ptr::null_mut(),
+			SW_SHOWNORMAL,
+		);
 	}
 }

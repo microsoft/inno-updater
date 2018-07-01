@@ -3,12 +3,12 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{error, io, mem, ptr, thread, time};
+use slog;
 use std::path::{Path, PathBuf};
-use winapi::shared::minwindef::{DWORD, TRUE};
+use std::{error, io, mem, ptr, thread, time};
 use strings::from_utf16;
 use util;
-use slog;
+use winapi::shared::minwindef::{DWORD, TRUE};
 
 pub struct RunningProcess {
 	pub name: String,
@@ -17,8 +17,9 @@ pub struct RunningProcess {
 
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-	use winapi::um::tlhelp32::{CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW,
-	                           Process32NextW, TH32CS_SNAPPROCESS};
+	use winapi::um::tlhelp32::{
+		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+	};
 
 	unsafe {
 		let handle = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -74,8 +75,9 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 
 fn get_last_error_message() -> Result<String, Box<error::Error>> {
 	use winapi::um::errhandlingapi::GetLastError;
-	use winapi::um::winbase::{FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM,
-	                          FORMAT_MESSAGE_IGNORE_INSERTS};
+	use winapi::um::winbase::{
+		FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS,
+	};
 
 	let mut error_message = [0u16; 32000];
 	let error_message_len: usize;
@@ -107,9 +109,9 @@ fn kill_process_if(
 	path: &Path,
 ) -> Result<(), Box<error::Error>> {
 	use winapi::shared::minwindef::MAX_PATH;
+	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
 	use winapi::um::psapi::GetModuleFileNameExW;
-	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
 
 	info!(

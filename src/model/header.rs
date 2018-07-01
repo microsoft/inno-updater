@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{error, fmt};
-use std::string::String;
-use std::io::prelude::*;
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crc::{Hasher32, crc32};
+use crc::{crc32, Hasher32};
+use std::io::prelude::*;
+use std::string::String;
+use std::{error, fmt};
 use strings;
 
 #[derive(Debug, Clone)]

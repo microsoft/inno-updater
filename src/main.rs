@@ -14,20 +14,23 @@ extern crate slog_term;
 extern crate winapi;
 
 mod blockio;
-mod strings;
-mod model;
 mod gui;
+mod model;
 mod process;
+<<<<<<< HEAD
 mod resources;
+=======
+mod strings;
+>>>>>>> ca49269d0457802f9030ef51be7a48da56f7e35c
 mod util;
 
-use std::{env, error, fmt, fs, io, thread};
+use model::{FileRec, Header};
+use slog::Drain;
+use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
-use std::io::prelude::*;
 use std::vec::Vec;
-use slog::Drain;
-use model::{FileRec, Header};
+use std::{env, error, fmt, fs, io, thread};
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
@@ -322,6 +325,32 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	update(log, &code_path, "_", silent == "true")
 }
 
+fn handle_error(err: Box<error::Error>, log_path: &str) {
+	let err_description = err.to_string();
+
+	let mut msgs = Vec::new();
+
+	msgs.push("Failed to install VS Code update. Please download and reinstall VS Code.");
+
+	msgs.push("Please attach the following log file to a new issue on GitHub:");
+	msgs.push(log_path);
+
+	let access_is_denied = err_description.to_lowercase().contains("access is denied");
+
+	if access_is_denied {
+		msgs.push("You might want to try the new Windows User Setup available from version 1.25. You will be redirected to a link which provides more information:");
+		msgs.push("https://aka.ms/vscode-update-access-denied");
+	}
+
+	let msg = msgs.join("\n\n");
+
+	gui::message_box(&msg, "VS Code");
+
+	if access_is_denied {
+		gui::open_url("https://aka.ms/vscode-update-access-denied");
+	}
+}
+
 fn __main(args: &Vec<String>) -> i32 {
 	let mut log_path = env::temp_dir();
 	log_path.push(format!("vscode-inno-updater.log"));
@@ -345,18 +374,7 @@ fn __main(args: &Vec<String>) -> i32 {
 		}
 		Err(err) => {
 			error!(log, "{}", err);
-
-			let msg = format!(
-				"Failed to install VS Code update. Please download and reinstall VS Code.
-
-Please attach the following log file to a new issue on GitHub:
-
-{}",
-				log_path.to_str().unwrap()
-			);
-
-			gui::message_box(&msg, "VS Code");
-
+			handle_error(err, log_path.to_str().unwrap());
 			1
 		}
 	}
@@ -402,6 +420,9 @@ fn main() {
 
 		thread::sleep(std::time::Duration::from_secs(5));
 		window.exit();
+	} else if args.len() == 3 && args[1] == "--error" {
+		let err = Box::new(io::Error::new(io::ErrorKind::Other, args[2].to_string()));
+		handle_error(err, "log_path");
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 

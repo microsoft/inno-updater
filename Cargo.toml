@@ -1,6 +1,6 @@
 [package]
 name = "inno_updater"
-version = "0.4.3"
+version = "0.4.4"
 authors = ["Microsoft <monacotools@microsoft.com>"]
 build = "build.rs"
 
@@ -12,7 +12,7 @@ slog-async = "2.2.0"
 slog-term = "2.3.0"
 
 [target.'cfg(windows)'.dependencies]
-winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi", "tlhelp32", "handleapi", "psapi", "errhandlingapi", "winbase"] }
+winapi = { version = "^0.3.3", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi", "tlhelp32", "handleapi", "psapi", "errhandlingapi", "winbase", "shellapi"] }
 
 [profile.release]
 lto = true

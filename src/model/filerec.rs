@@ -3,11 +3,11 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{error, fmt};
+use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::io::prelude::*;
 use std::path::Path;
 use std::string::String;
-use std::io::prelude::*;
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use std::{error, fmt};
 
 #[derive(Copy, Clone)]
 pub enum UninstallRecTyp {
