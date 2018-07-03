@@ -3,14 +3,13 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{mem, ptr};
 use std::sync::mpsc::Sender;
+use std::{mem, ptr};
 use strings::to_utf16;
 use winapi::shared::basetsd::INT_PTR;
 use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, UINT, WPARAM};
 use winapi::shared::ntdef::LPCWSTR;
 use winapi::shared::windef::HWND;
-use winapi::um::libloaderapi::GetModuleHandleW;
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
@@ -25,10 +24,12 @@ struct DialogData {
 unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -> INT_PTR {
 	use resources;
 	use winapi::shared::windef::RECT;
-	use winapi::um::winuser::{GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
-	                          HWND_TOPMOST, SW_HIDE, WM_INITDIALOG, WM_DESTROY};
-	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::commctrl::PBM_SETMARQUEE;
+	use winapi::um::processthreadsapi::GetCurrentThreadId;
+	use winapi::um::winuser::{
+		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow, HWND_TOPMOST,
+		SW_HIDE, WM_DESTROY, WM_INITDIALOG,
+	};
 
 	match msg {
 		WM_INITDIALOG => {
@@ -57,7 +58,12 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 				ShowWindow(hwnd, SW_HIDE);
 			}
 
-			data.tx.send(ProgressWindow { ui_thread_id: GetCurrentThreadId() }).unwrap();
+			data
+				.tx
+				.send(ProgressWindow {
+					ui_thread_id: GetCurrentThreadId(),
+				})
+				.unwrap();
 
 			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
 			0
@@ -88,8 +94,8 @@ impl ProgressWindow {
 
 pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 	use resources;
-	use winapi::um::winuser::{DialogBoxParamW, MAKEINTRESOURCEW};
 	use winapi::um::libloaderapi::GetModuleHandleW;
+	use winapi::um::winuser::{DialogBoxParamW, MAKEINTRESOURCEW};
 
 	let data = DialogData { silent, tx };
 
@@ -99,7 +105,7 @@ pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 			MAKEINTRESOURCEW(resources::PROGRESS_DIALOG),
 			ptr::null_mut(),
 			Some(dlgproc),
-			(&data as *const DialogData) as LPARAM
+			(&data as *const DialogData) as LPARAM,
 		);
 	}
 }

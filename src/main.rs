@@ -262,7 +262,8 @@ fn update(
 		gui::run_progress_window(silent, tx);
 	});
 
-	let window = rx.recv()
+	let window = rx
+		.recv()
 		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
 
 	do_update(&log, code_path, update_folder_name)?;
