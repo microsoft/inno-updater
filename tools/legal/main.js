@@ -3,6 +3,7 @@ const toml = require('toml');
 const fs = require('mz/fs');
 const pall = require('p-all');
 const minimist = require('minimist');
+const semver = require('semver');
 
 async function getLicenseFromAPI(repository) {
 	const res = await got(`https://api.github.com/repos/${repository}/license`, {
@@ -48,6 +49,14 @@ async function getLicense(repository) {
 async function getCrateInfo(name) {
 	const res = await got(`https://crates.io/api/v1/crates/${name}`, { json: true });
 	return res.body;
+}
+
+function comparePackages(a, b) {
+	if (a.name === b.name) {
+		return semver.compare(a.version, b.version);
+	}
+
+	return a.name < b.name ? -1 : 1;
 }
 
 async function main(argv) {
@@ -102,7 +111,7 @@ async function main(argv) {
 	}
 
 	if (argv['ossreadme']) {
-		ossreadme.sort((a, b) => a.name < b.name ? -1 : 1);
+		ossreadme.sort(comparePackages);
 		console.log(JSON.stringify(ossreadme, null, '\t'));
 	}
 
