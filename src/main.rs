@@ -133,7 +133,7 @@ fn move_update(
 
 		let max_attempts = match entry_file_type.is_file() {
 			true => None,
-			false => Some(26), // wait longer if folder
+			false => Some(27), // wait longer if folder
 		};
 
 		// attempt to delete
