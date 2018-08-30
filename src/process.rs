@@ -73,33 +73,6 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	}
 }
 
-fn get_last_error_message() -> Result<String, Box<error::Error>> {
-	use winapi::um::errhandlingapi::GetLastError;
-	use winapi::um::winbase::{
-		FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS,
-	};
-
-	let mut error_message = [0u16; 32000];
-	let error_message_len: usize;
-
-	unsafe {
-		error_message_len = FormatMessageW(
-			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
-			ptr::null_mut(),
-			GetLastError(),
-			0,
-			error_message.as_mut_ptr(),
-			32000,
-			ptr::null_mut(),
-		) as usize;
-	}
-
-	Ok(match error_message_len {
-		0 => String::from("unknown error"),
-		_ => from_utf16(&error_message[0..error_message_len])?,
-	})
-}
-
 /**
  * Kills a running process, if its path is the same as the provided one.
  */
@@ -131,7 +104,7 @@ fn kill_process_if(
 			return Err(
 				io::Error::new(
 					io::ErrorKind::Other,
-					format!("Failed to open process: {}", get_last_error_message()?),
+					format!("Failed to open process: {}", util::get_last_error_message()?),
 				).into(),
 			);
 		}
@@ -152,7 +125,7 @@ fn kill_process_if(
 					io::ErrorKind::Other,
 					format!(
 						"Failed to get process file name: {}",
-						get_last_error_message()?
+						util::get_last_error_message()?
 					),
 				).into(),
 			);

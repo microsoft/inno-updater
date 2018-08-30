@@ -15,14 +15,17 @@ extern crate winapi;
 
 mod blockio;
 mod gui;
+mod handle;
 mod model;
 mod process;
 mod resources;
 mod strings;
 mod util;
 
+use handle::FileHandle;
 use model::{FileRec, Header};
 use slog::Drain;
+use std::collections::LinkedList;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -80,31 +83,57 @@ fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), Bo
 	Ok(())
 }
 
-fn move_update(
+fn delete_existing_version(
 	log: &slog::Logger,
-	uninstdat_path: &Path,
+	root_path: &Path,
 	update_folder_name: &str,
 ) -> Result<(), Box<error::Error>> {
-	info!(
-		log,
-		"move_update: {:?}, {}", uninstdat_path, update_folder_name
-	);
+	let mut directories: LinkedList<&Path> = LinkedList::new();
+	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
 
-	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
-		io::ErrorKind::Other,
-		"could not get parent path of uninstdat",
-	))?;
+	directories.push_back(root_path);
 
-	let mut update_path = PathBuf::from(root_path);
-	update_path.push(update_folder_name);
+	while directories.len() > 0 {
+		let dir = directories.pop_front().unwrap();
 
-	let stat = fs::metadata(&update_path)?;
+		for entry in fs::read_dir(dir)? {
+			let entry = entry?;
+			let entry_name = entry.file_name();
+			let entry_name = entry_name.to_str().ok_or(io::Error::new(
+				io::ErrorKind::Other,
+				"could not get entry name",
+			))?;
 
-	if !stat.is_dir() {
-		return Err(io::Error::new(io::ErrorKind::Other, "Update folder is not a directory").into());
+			if dir == root_path {
+				// don't delete the update folder
+				if entry_name == update_folder_name {
+					continue;
+				}
+
+				// don't delete any of the unins* files
+				if String::from(entry_name).starts_with("unins") {
+					continue;
+				}
+
+				// don't delete ourselves
+				if entry_name == "tools" {
+					continue;
+				}
+			}
+
+			let entry_file_type = entry.file_type()?;
+			let entry_path = entry.path();
+
+			if entry_file_type.is_dir() {
+
+			} else if entry_file_type.is_file() {
+
+			}
+		}
 	}
 
-	// delete all current files
+	// let mut handles = Vec::new();
+
 	for entry in fs::read_dir(&root_path)? {
 		let entry = entry?;
 		let entry_name = entry.file_name();
@@ -156,6 +185,36 @@ fn move_update(
 			max_attempts,
 		)?;
 	}
+
+	Ok(())
+}
+
+fn move_update(
+	log: &slog::Logger,
+	uninstdat_path: &Path,
+	update_folder_name: &str,
+) -> Result<(), Box<error::Error>> {
+	info!(
+		log,
+		"move_update: {:?}, {}", uninstdat_path, update_folder_name
+	);
+
+	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
+		io::ErrorKind::Other,
+		"could not get parent path of uninstdat",
+	))?;
+
+	let mut update_path = PathBuf::from(root_path);
+	update_path.push(update_folder_name);
+
+	let stat = fs::metadata(&update_path)?;
+
+	if !stat.is_dir() {
+		return Err(io::Error::new(io::ErrorKind::Other, "Update folder is not a directory").into());
+	}
+
+	// safely delete all current files
+	delete_existing_version(log, root_path, update_folder_name)?;
 
 	// move update to current
 	for entry in fs::read_dir(&update_path)? {
@@ -297,12 +356,10 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	let code_path = PathBuf::from(&args[1]);
 
 	if !code_path.is_absolute() {
-		return Err(
-			ArgumentError(format!(
-				"Code path needs to be absolute. Instead got: {}",
-				args[1]
-			)).into(),
-		);
+		return Err(ArgumentError(format!(
+			"Code path needs to be absolute. Instead got: {}",
+			args[1]
+		)).into());
 	}
 
 	if !code_path.exists() {
@@ -312,12 +369,10 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	let silent = args[2].clone();
 
 	if silent != "true" && silent != "false" {
-		return Err(
-			ArgumentError(format!(
-				"Silent needs to be true or false. Instead got: {}",
-				silent
-			)).into(),
-		);
+		return Err(ArgumentError(format!(
+			"Silent needs to be true or false. Instead got: {}",
+			silent
+		)).into());
 	}
 
 	update(log, &code_path, "_", silent == "true")

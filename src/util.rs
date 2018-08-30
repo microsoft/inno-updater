@@ -3,7 +3,8 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use std::{thread, time};
+use std::{error, ptr, thread, time};
+use strings::from_utf16;
 
 /**
  * Quadratic backoff retry mechanism.
@@ -39,4 +40,31 @@ where
 			}
 		}
 	}
+}
+
+pub fn get_last_error_message() -> Result<String, Box<error::Error>> {
+	use winapi::um::errhandlingapi::GetLastError;
+	use winapi::um::winbase::{
+		FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS,
+	};
+
+	let mut error_message = [0u16; 32000];
+	let error_message_len: usize;
+
+	unsafe {
+		error_message_len = FormatMessageW(
+			FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
+			ptr::null_mut(),
+			GetLastError(),
+			0,
+			error_message.as_mut_ptr(),
+			32000,
+			ptr::null_mut(),
+		) as usize;
+	}
+
+	Ok(match error_message_len {
+		0 => String::from("unknown error"),
+		_ => from_utf16(&error_message[0..error_message_len])?,
+	})
 }
