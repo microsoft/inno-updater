@@ -9,7 +9,13 @@ Helper utility to enable background updates for VS Code in Windows
 
 ## Development
 
-Please use the provided `cargo-build` and `cargo-run` commands instead of the default `cargo build` and `cargo run` ones. Note that `--release` will build for the `i686-pc-windows-msvc` target, which is the correct target to ship with VS Code.
+Please use the provided `cargo-build` and `cargo-run` commands instead of the default `cargo build` and `cargo run` ones.
+
+Note that `--release` will build for the `i686-pc-windows-msvc` target, which is the correct target to ship with VS Code. You'll need to add that target in your env:
+
+```
+rustup target add i686-pc-windows-msvc
+```
 
 ## Integration
 
