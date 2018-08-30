@@ -88,15 +88,18 @@ fn delete_existing_version(
 	root_path: &Path,
 	update_folder_name: &str,
 ) -> Result<(), Box<error::Error>> {
-	let mut directories: LinkedList<&Path> = LinkedList::new();
+	let mut directories: LinkedList<PathBuf> = LinkedList::new();
+	let mut top_directories: LinkedList<PathBuf> = LinkedList::new();
 	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
 
-	directories.push_back(root_path);
+	let root = PathBuf::from(root_path);
+	directories.push_back(root);
 
 	while directories.len() > 0 {
 		let dir = directories.pop_front().unwrap();
+		info!(log, "Reading directory: {:?}", dir);
 
-		for entry in fs::read_dir(dir)? {
+		for entry in fs::read_dir(&dir)? {
 			let entry = entry?;
 			let entry_name = entry.file_name();
 			let entry_name = entry_name.to_str().ok_or(io::Error::new(
@@ -125,64 +128,66 @@ fn delete_existing_version(
 			let entry_path = entry.path();
 
 			if entry_file_type.is_dir() {
+				if dir == root_path {
+					top_directories.push_back(entry_path.to_owned());
+				}
 
+				directories.push_back(entry_path);
 			} else if entry_file_type.is_file() {
+				// attempt to get exclusive file handle
+				let file_handle = util::retry(
+					|attempt| -> Result<FileHandle, Box<error::Error>> {
+						info!(
+							log,
+							"Get file handle: {:?} (attempt {})", entry_path, attempt
+						);
 
+						FileHandle::new(&entry_path)
+					},
+					Some(16),
+				)?;
+
+				file_handles.push_back(file_handle);
 			}
 		}
 	}
 
-	// let mut handles = Vec::new();
+	info!(log, "Collected all directories and file handles");
 
-	for entry in fs::read_dir(&root_path)? {
-		let entry = entry?;
-		let entry_name = entry.file_name();
-		let entry_name = entry_name.to_str().ok_or(io::Error::new(
-			io::ErrorKind::Other,
-			"could not get entry name",
-		))?;
+	for file_handle in &file_handles {
+		util::retry(
+			|_| -> Result<(), Box<error::Error>> { file_handle.mark_for_deletion() },
+			None,
+		)?;
+	}
 
-		// don't delete the update folder
-		if entry_name == update_folder_name {
-			continue;
-		}
+	info!(log, "All file handles marked for deletion");
 
-		// don't delete any of the unins* files
-		if String::from(entry_name).starts_with("unins") {
-			continue;
-		}
+	for file_handle in &file_handles {
+		util::retry(
+			|_| -> Result<(), Box<error::Error>> { file_handle.close() },
+			None,
+		)?;
+	}
 
-		// don't delete ourselves
-		if entry_name == "tools" {
-			continue;
-		}
+	info!(log, "All files deleted");
 
-		let entry_file_type = entry.file_type()?;
-		let entry_path = entry.path();
-
-		let max_attempts = match entry_file_type.is_file() {
-			true => None,
-			false => Some(27), // wait longer if folder
-		};
-
-		// attempt to delete
+	for dir in top_directories {
 		util::retry(
 			|attempt| -> Result<(), Box<error::Error>> {
-				if !entry_path.exists() {
+				if !dir.exists() {
 					return Ok(());
 				}
 
-				info!(log, "Delete: {:?} (attempt {})", entry_name, attempt);
+				info!(
+					log,
+					"Delete directory recursively: {:?} (attempt {})", dir, attempt
+				);
 
-				if entry_file_type.is_file() {
-					fs::remove_file(&entry_path)?;
-				} else {
-					fs::remove_dir_all(&entry_path)?;
-				}
-
+				fs::remove_dir_all(&dir)?;
 				Ok(())
 			},
-			max_attempts,
+			None,
 		)?;
 	}
 
