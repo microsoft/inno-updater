@@ -27,8 +27,8 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 	use winapi::um::commctrl::PBM_SETMARQUEE;
 	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::winuser::{
-		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow, HWND_TOPMOST,
-		SW_HIDE, WM_DESTROY, WM_INITDIALOG,
+		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
+		HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG,
 	};
 
 	match msg {
@@ -58,8 +58,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 				ShowWindow(hwnd, SW_HIDE);
 			}
 
-			data
-				.tx
+			data.tx
 				.send(ProgressWindow {
 					ui_thread_id: GetCurrentThreadId(),
 				})
@@ -120,21 +119,5 @@ pub fn message_box(text: &str, caption: &str) -> i32 {
 			to_utf16(caption).as_ptr(),
 			MB_ICONERROR | MB_SYSTEMMODAL,
 		)
-	}
-}
-
-pub fn open_url(url: &str) {
-	use winapi::um::shellapi::ShellExecuteW;
-	use winapi::um::winuser::SW_SHOWNORMAL;
-
-	unsafe {
-		ShellExecuteW(
-			ptr::null_mut(),
-			to_utf16("open").as_ptr(),
-			to_utf16(url).as_ptr(),
-			ptr::null_mut(),
-			ptr::null_mut(),
-			SW_SHOWNORMAL,
-		);
 	}
 }
