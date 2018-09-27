@@ -101,9 +101,9 @@ impl Header {
 		let version = read
 			.read_i32::<LittleEndian>()
 			.map_err(|_| HeaderParseError("Failed to parse header version"))?;
-		let num_recs = read
-			.read_i32::<LittleEndian>()
-			.map_err(|_| HeaderParseError("Failed to parse header num recs"))? as usize;
+		let num_recs =
+			read.read_i32::<LittleEndian>()
+				.map_err(|_| HeaderParseError("Failed to parse header num recs"))? as usize;
 		let end_offset = read
 			.read_u32::<LittleEndian>()
 			.map_err(|_| HeaderParseError("Failed to parse header end offset"))?;
@@ -112,8 +112,7 @@ impl Header {
 			.map_err(|_| HeaderParseError("Failed to parse header flags"))?;
 
 		let mut reserved = [0; 108];
-		read
-			.read_exact(&mut reserved)
+		read.read_exact(&mut reserved)
 			.map_err(|_| HeaderParseError("Failed to parse header reserved"))?;
 
 		let crc = read
