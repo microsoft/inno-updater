@@ -59,6 +59,14 @@ function comparePackages(a, b) {
 	return a.name < b.name ? -1 : 1;
 }
 
+function getRepository(info) {
+	if (info.crate.id === 'isatty') {
+		return 'https://github.com/dtolnay/isatty';
+	}
+
+	return info.crate.repository;
+}
+
 async function main(argv) {
 	if (argv._.length < 1) {
 		throw new Error('Usage: node legal [--ossreadme] Cargo.lock');
@@ -77,7 +85,7 @@ async function main(argv) {
 			const versionInfo = info.versions.filter(v => v.num === pkg.version)[0];
 
 			if (argv['ossreadme']) {
-				const repositoryUrl = info.crate.repository;
+				const repositoryUrl = getRepository(info);
 				const match = /github\.com\/([^/]+\/[^/]+)(\/|$)/.exec(repositoryUrl);
 
 				if (!match) {
