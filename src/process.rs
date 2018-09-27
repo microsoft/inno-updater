@@ -18,7 +18,8 @@ pub struct RunningProcess {
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 	use winapi::um::tlhelp32::{
-		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPPROCESS,
+		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+		TH32CS_SNAPPROCESS,
 	};
 
 	unsafe {
@@ -101,12 +102,13 @@ fn kill_process_if(
 		);
 
 		if handle == ptr::null_mut() {
-			return Err(
-				io::Error::new(
-					io::ErrorKind::Other,
-					format!("Failed to open process: {}", util::get_last_error_message()?),
-				).into(),
-			);
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed to open process: {}",
+					util::get_last_error_message()?
+				),
+			).into());
 		}
 
 		let mut raw_path = [0u16; MAX_PATH];
@@ -120,15 +122,13 @@ fn kill_process_if(
 		if len == 0 {
 			CloseHandle(handle);
 
-			return Err(
-				io::Error::new(
-					io::ErrorKind::Other,
-					format!(
-						"Failed to get process file name: {}",
-						util::get_last_error_message()?
-					),
-				).into(),
-			);
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed to get process file name: {}",
+					util::get_last_error_message()?
+				),
+			).into());
 		}
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
@@ -201,6 +201,7 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Er
 
 	// try to kill any running processes
 	util::retry(
+		"attempting to kill any running Code.exe processes",
 		|attempt| {
 			info!(
 				log,

@@ -109,15 +109,55 @@ pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 	}
 }
 
-pub fn message_box(text: &str, caption: &str) -> i32 {
-	use winapi::um::winuser::{MessageBoxW, MB_ICONERROR, MB_SYSTEMMODAL};
+pub enum MessageBoxType {
+	Error,
+	RetryCancel,
+}
+
+#[derive(Debug)]
+pub enum MessageBoxResult {
+	Unknown,
+	Abort,
+	Cancel,
+	Continue,
+	Ignore,
+	No,
+	OK,
+	Retry,
+	TryAgain,
+	Yes,
+}
+
+pub fn message_box(text: &str, caption: &str, mbtype: MessageBoxType) -> MessageBoxResult {
+	use winapi::um::winuser::{
+		MessageBoxW, IDABORT, IDCANCEL, IDCONTINUE, IDIGNORE, IDNO, IDOK, IDRETRY, IDTRYAGAIN,
+		IDYES, MB_ICONERROR, MB_RETRYCANCEL, MB_SYSTEMMODAL,
+	};
+
+	let result: i32;
 
 	unsafe {
-		MessageBoxW(
+		result = MessageBoxW(
 			ptr::null_mut(),
 			to_utf16(text).as_ptr(),
 			to_utf16(caption).as_ptr(),
-			MB_ICONERROR | MB_SYSTEMMODAL,
+			match mbtype {
+				MessageBoxType::Error => MB_ICONERROR | MB_SYSTEMMODAL,
+				MessageBoxType::RetryCancel => MB_RETRYCANCEL | MB_ICONERROR | MB_SYSTEMMODAL,
+			},
 		)
+	}
+
+	match result {
+		IDABORT => MessageBoxResult::Abort,
+		IDCANCEL => MessageBoxResult::Cancel,
+		IDCONTINUE => MessageBoxResult::Continue,
+		IDIGNORE => MessageBoxResult::Ignore,
+		IDNO => MessageBoxResult::No,
+		IDOK => MessageBoxResult::OK,
+		IDRETRY => MessageBoxResult::Retry,
+		IDTRYAGAIN => MessageBoxResult::TryAgain,
+		IDYES => MessageBoxResult::Yes,
+		_ => MessageBoxResult::Unknown,
 	}
 }

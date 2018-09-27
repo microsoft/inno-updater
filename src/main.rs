@@ -136,7 +136,9 @@ fn delete_existing_version(
 				directories.push_back(entry_path);
 			} else if entry_file_type.is_file() {
 				// attempt to get exclusive file handle
+				let msg = format!("opening file handle: {:?}", entry_path);
 				let file_handle = util::retry(
+					&msg,
 					|attempt| -> Result<FileHandle, Box<error::Error>> {
 						info!(
 							log,
@@ -157,6 +159,7 @@ fn delete_existing_version(
 
 	for file_handle in &file_handles {
 		util::retry(
+			"marking a file for deletion",
 			|_| -> Result<(), Box<error::Error>> { file_handle.mark_for_deletion() },
 			None,
 		)?;
@@ -166,6 +169,7 @@ fn delete_existing_version(
 
 	for file_handle in &file_handles {
 		util::retry(
+			"closing a file handle",
 			|_| -> Result<(), Box<error::Error>> { file_handle.close() },
 			None,
 		)?;
@@ -174,7 +178,9 @@ fn delete_existing_version(
 	info!(log, "All files deleted");
 
 	for dir in top_directories {
+		let msg = format!("deleting a directory: {:?}", dir);
 		util::retry(
+			&msg,
 			|attempt| -> Result<(), Box<error::Error>> {
 				if !dir.exists() {
 					return Ok(());
@@ -234,10 +240,13 @@ fn move_update(
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
 
+		let msg = format!("renaming: {:?}", entry_name);
 		util::retry(
+			&msg,
 			|attempt| {
 				info!(log, "Rename: {:?} (attempt {})", entry_name, attempt);
-				fs::rename(entry.path(), &target)
+				fs::rename(entry.path(), &target)?;
+				Ok(())
 			},
 			None,
 		)?;
@@ -394,7 +403,7 @@ fn handle_error(log_path: &str) {
 
 	let msg = msgs.join("\n\n");
 
-	gui::message_box(&msg, "VS Code");
+	gui::message_box(&msg, "VS Code", gui::MessageBoxType::Error);
 }
 
 fn __main(args: &Vec<String>) -> i32 {
@@ -454,6 +463,13 @@ fn parse(path: &Path) -> Result<(), Box<error::Error>> {
 
 fn main() {
 	let args: Vec<String> = env::args().collect();
+	let log_path = format!(
+		"vscode-inno-updater-{:?}.log",
+		SystemTime::now()
+			.duration_since(SystemTime::UNIX_EPOCH)
+			.unwrap()
+			.as_secs()
+	);
 
 	if args.len() == 3 && args[1] == "--parse" {
 		let path = PathBuf::from(&args[2]);
@@ -472,15 +488,34 @@ fn main() {
 
 		thread::sleep(std::time::Duration::from_secs(5));
 		window.exit();
-	} else if args.len() == 3 && args[1] == "--error" {
-		let log_path = format!(
-			"vscode-inno-updater-{:?}.log",
-			SystemTime::now()
-				.duration_since(SystemTime::UNIX_EPOCH)
-				.unwrap()
-				.as_secs()
+	} else if args.len() == 2 && args[1] == "--retry-simulation" {
+		let (tx, rx) = mpsc::channel();
+
+		thread::spawn(move || {
+			gui::run_progress_window(false, tx);
+		});
+
+		let window = rx.recv().unwrap();
+		let result = util::retry(
+			"simulating a failed retry operation",
+			|_| -> Result<u32, Box<error::Error>> {
+				Err(Box::new(std::io::Error::new(
+					std::io::ErrorKind::Other,
+					"[[Simulated error message]]",
+				)))
+			},
+			Some(5),
 		);
+
+		if let Err(_) = result {
+			handle_error(&log_path);
+		}
+
+		window.exit();
+	} else if args.len() == 3 && args[1] == "--error" {
 		handle_error(&log_path);
+	} else if args.len() == 2 && (args[1] == "--version" || args[1] == "-v") {
+		eprintln!("Inno Update v{}", VERSION);
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 
