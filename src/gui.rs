@@ -109,6 +109,7 @@ pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 	}
 }
 
+#[derive(Copy, Clone)]
 pub enum MessageBoxType {
 	Error,
 	RetryCancel,

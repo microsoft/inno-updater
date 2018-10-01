@@ -48,7 +48,7 @@ where
 					}
 				}
 
-				thread::sleep(time::Duration::from_millis((attempt.pow(2) * 50) as u64));
+				thread::sleep(time::Duration::from_millis(u64::from(attempt.pow(2) * 50)));
 			}
 		}
 	}

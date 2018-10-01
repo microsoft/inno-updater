@@ -255,7 +255,7 @@ impl<'a> FileRec {
 			.map_err(|_| FileRecParseError("Failed to parse file rec data size"))?
 			as usize;
 
-		if data_size > 0x8000000 {
+		if data_size > 0x0800_0000 {
 			return Err(FileRecParseError("File rec data size too large"));
 		}
 

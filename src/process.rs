@@ -70,7 +70,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 			}
 		}
 
-		return Ok(result);
+		Ok(result)
 	}
 }
 
@@ -101,7 +101,7 @@ fn kill_process_if(
 			process.id,
 		);
 
-		if handle == ptr::null_mut() {
+		if handle.is_null() {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				format!(
@@ -158,12 +158,12 @@ fn kill_process_if(
 }
 
 pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Error>> {
-	let file_name = path.file_name().ok_or(io::Error::new(
+	let file_name = path.file_name().ok_or_else(|| io::Error::new(
 		io::ErrorKind::Other,
 		"could not get process file name",
 	))?;
 
-	let file_name = file_name.to_str().ok_or(io::Error::new(
+	let file_name = file_name.to_str().ok_or_else(|| io::Error::new(
 		io::ErrorKind::Other,
 		"could not get convert file name to str",
 	))?;
@@ -184,13 +184,13 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Er
 			.filter(|p| p.name == file_name)
 			.collect();
 
-		if processes.len() == 0 {
+		if processes.is_empty() {
 			info!(log, "{} is not running", file_name);
 			break;
 		}
 
 		// give up after 60 * 500ms = 30 seconds
-		if attempt == 60 || processes.len() == 0 {
+		if attempt == 60 || processes.is_empty() {
 			info!(log, "Gave up waiting for {} to exit", file_name);
 			break;
 		}

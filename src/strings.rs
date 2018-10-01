@@ -20,17 +20,17 @@ pub fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, Re
 
 	reader
 		.read_exact(&mut vec)
-		.map_err(|err| ReadUtf8StringError::IOError(err))
+		.map_err(ReadUtf8StringError::IOError)
 		.and_then(|_| {
 			let pos = vec.iter().position(|&x| x == 0).unwrap_or(64);
 			let bar = &vec[0..pos];
-			String::from_utf8(Vec::from(bar)).map_err(|err| ReadUtf8StringError::UTF8Error(err))
+			String::from_utf8(Vec::from(bar)).map_err(ReadUtf8StringError::UTF8Error)
 		})
 }
 
 pub fn write_utf8_string(
 	writer: &mut Write,
-	string: &String,
+	string: &str,
 	capacity: usize,
 ) -> Result<(), io::Error> {
 	let bytes = string.as_bytes();
@@ -52,7 +52,7 @@ pub fn from_utf16(value: &[u16]) -> Result<String, io::Error> {
 	use std::ffi::OsString;
 	use std::os::windows::ffi::OsStringExt;
 
-	let pos = value.iter().position(|&x| x == 0).unwrap_or(value.len());
+	let pos = value.iter().position(|&x| x == 0).unwrap_or_else(|| value.len());
 	let value = &value[0..pos];
 
 	OsString::from_wide(value)
