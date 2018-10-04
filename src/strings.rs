@@ -57,7 +57,7 @@ pub fn from_utf16(value: &[u16]) -> Result<String, io::Error> {
 
 	OsString::from_wide(value)
 		.into_string()
-		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could convert from utf16"))
+		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not convert from utf16"))
 }
 
 pub fn to_u16s<S: AsRef<OsStr>>(s: S) -> Vec<u16> {
