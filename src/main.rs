@@ -396,14 +396,14 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 fn handle_error(log_path: &str) {
 	let mut msgs = Vec::new();
 
-	msgs.push("Failed to install VS Code update.");
+	msgs.push("Failed to install Visual Studio Code update.");
 	msgs.push("Updates may fail due to anti-virus software and/or runaway processes. Please try restarting your machine before attempting to update again.");
 	msgs.push("If update fails repeatedly, please attach the following log file to a new issue on GitHub:");
 	msgs.push(log_path);
 
 	let msg = msgs.join("\n\n");
 
-	gui::message_box(&msg, "VS Code", gui::MessageBoxType::Error);
+	gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::Error);
 }
 
 fn __main(args: &Vec<String>) -> i32 {

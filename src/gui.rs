@@ -64,7 +64,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 				})
 				.unwrap();
 
-			ShutdownBlockReasonCreate(hwnd, to_utf16("VS Code is updating...").as_ptr());
+			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is updating...").as_ptr());
 			0
 		}
 		WM_DESTROY => {
