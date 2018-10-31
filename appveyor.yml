@@ -6,7 +6,7 @@ os: Visual Studio 2015
 environment:
   channel: stable
   target: i686-pc-windows-msvc
-  nodejs_version: "8"
+  nodejs_version: "10"
 
 install:
   - ps: Install-Product node $env:nodejs_version
