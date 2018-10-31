@@ -104,8 +104,8 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
 
 		match byte_result {
-			0x00...0xfc => panic!("what 0x{:x}", byte_result),
-			0xfd => panic!("what 0x{:x}", byte_result),
+			0x00...0xfc => panic!("What 0x{:x}", byte_result),
+			0xfd => panic!("What 0x{:x}", byte_result),
 			0xfe => {
 				let size = reader
 					.read_i32::<LittleEndian>()

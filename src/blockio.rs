@@ -36,14 +36,14 @@ impl<'a> BlockRead<'a> {
 		if size != !not_size {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
-				"block header size is corrupt",
+				"Block header size is corrupt",
 			));
 		}
 
 		if size > BLOCK_MAX_SIZE as u32 {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
-				"block header size is too large",
+				"Block header size is too large",
 			));
 		}
 
@@ -58,7 +58,7 @@ impl<'a> BlockRead<'a> {
 		if actual_crc != crc {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
-				"block header crc32 check failed",
+				"Block header crc32 check failed",
 			));
 		}
 
