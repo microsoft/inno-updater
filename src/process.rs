@@ -18,7 +18,7 @@ pub struct RunningProcess {
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 	use winapi::um::tlhelp32::{
-		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
+		CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
 		TH32CS_SNAPPROCESS,
 	};
 
@@ -179,18 +179,17 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Er
 			"Checking for running {} processes... (attempt {})", file_name, attempt
 		);
 
-		let processes: Vec<_> = get_running_processes()?
+		let process_found = get_running_processes()?
 			.into_iter()
-			.filter(|p| p.name == file_name)
-			.collect();
+			.any(|p| p.name == file_name);
 
-		if processes.len() == 0 {
+		if !process_found {
 			info!(log, "{} is not running", file_name);
 			break;
 		}
 
 		// give up after 60 * 500ms = 30 seconds
-		if attempt == 60 || processes.len() == 0 {
+		if attempt == 60 {
 			info!(log, "Gave up waiting for {} to exit", file_name);
 			break;
 		}
