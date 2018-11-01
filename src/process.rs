@@ -28,7 +28,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 		if handle == INVALID_HANDLE_VALUE {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"could not create process snapshot",
+				"Could not create process snapshot",
 			));
 		}
 
@@ -52,7 +52,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
-				"could not get first process data",
+				"Could not get first process data",
 			));
 		}
 
@@ -160,12 +160,12 @@ fn kill_process_if(
 pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Error>> {
 	let file_name = path.file_name().ok_or(io::Error::new(
 		io::ErrorKind::Other,
-		"could not get process file name",
+		"Could not get process file name",
 	))?;
 
 	let file_name = file_name.to_str().ok_or(io::Error::new(
 		io::ErrorKind::Other,
-		"could not get convert file name to str",
+		"Could not get convert file name to str",
 	))?;
 
 	let mut attempt: u32 = 0;

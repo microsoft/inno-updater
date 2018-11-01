@@ -105,7 +105,7 @@ fn delete_existing_version(
 			let entry_name = entry.file_name();
 			let entry_name = entry_name.to_str().ok_or(io::Error::new(
 				io::ErrorKind::Other,
-				"could not get entry name",
+				"Could not get entry name",
 			))?;
 
 			if dir == root_path {
@@ -136,7 +136,7 @@ fn delete_existing_version(
 				directories.push_back(entry_path);
 			} else if entry_file_type.is_file() {
 				// attempt to get exclusive file handle
-				let msg = format!("opening file handle: {:?}", entry_path);
+				let msg = format!("Opening file handle: {:?}", entry_path);
 				let file_handle = util::retry(
 					&msg,
 					|attempt| -> Result<FileHandle, Box<error::Error>> {
@@ -178,7 +178,7 @@ fn delete_existing_version(
 	info!(log, "All files deleted");
 
 	for dir in top_directories {
-		let msg = format!("deleting a directory: {:?}", dir);
+		let msg = format!("Deleting a directory: {:?}", dir);
 		util::retry(
 			&msg,
 			|attempt| -> Result<(), Box<error::Error>> {
@@ -213,7 +213,7 @@ fn move_update(
 
 	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
 		io::ErrorKind::Other,
-		"could not get parent path of uninstdat",
+		"Could not get parent path of uninstdat",
 	))?;
 
 	let mut update_path = PathBuf::from(root_path);
@@ -240,7 +240,7 @@ fn move_update(
 		let mut target = PathBuf::from(root_path);
 		target.push(entry_name);
 
-		let msg = format!("renaming: {:?}", entry_name);
+		let msg = format!("Renaming: {:?}", entry_name);
 		util::retry(
 			&msg,
 			|attempt| {
@@ -270,7 +270,7 @@ fn patch_uninstdat(
 
 	let root_path = uninstdat_path.parent().ok_or(io::Error::new(
 		io::ErrorKind::Other,
-		"could not get parent path of uninstdat",
+		"Could not get parent path of uninstdat",
 	))?;
 
 	let mut update_path = PathBuf::from(root_path);
@@ -283,8 +283,7 @@ fn patch_uninstdat(
 				rec.rebase(&update_path)
 			}
 			_ => Ok(rec.clone()),
-		})
-		.collect();
+		}).collect();
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, recs?)?;
@@ -301,7 +300,7 @@ fn do_update(
 
 	let root_path = code_path.parent().ok_or(io::Error::new(
 		io::ErrorKind::Other,
-		"could not get parent path of uninstdat",
+		"Could not get parent path of uninstdat",
 	))?;
 
 	let mut uninstdat_path = PathBuf::from(root_path);
@@ -455,7 +454,7 @@ fn parse(path: &Path) -> Result<(), Box<error::Error>> {
 	}
 
 	for (k, c) in &map {
-		println!("records 0x{:x} {}", k, c);
+		println!("Records 0x{:x} {}", k, c);
 	}
 
 	Ok(())
