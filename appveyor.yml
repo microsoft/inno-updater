@@ -6,7 +6,7 @@ os: Visual Studio 2015
 environment:
   channel: stable
   target: i686-pc-windows-msvc
-  nodejs_version: "8"
+    nodejs_version: "8"
 
 install:
   - ps: Install-Product node $env:nodejs_version
@@ -24,7 +24,7 @@ build_script:
   - cargo-build --release --verbose %cargoflags%
 
 after_build:
-  - 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe %APPVEYOR_BUILD_FOLDER%\OSSREADME.json
+  - 7z a inno_updater.zip %APPVEYOR_BUILD_FOLDER%\target\i686-pc-windows-msvc\release\inno_updater.exe %APPVEYOR_BUILD_FOLDER%\Cargo.lock
 
 test: off
 
