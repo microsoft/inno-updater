@@ -20,7 +20,7 @@ install:
   - cargo -vV
 
 build_script:
-  - node tools\legal --ossreadme Cargo.lock > OSSREADME.json
+  - node tools\legal Cargo.lock
   - cargo-build --release --verbose %cargoflags%
 
 after_build:
