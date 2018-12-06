@@ -283,7 +283,8 @@ fn patch_uninstdat(
 				rec.rebase(&update_path)
 			}
 			_ => Ok(rec.clone()),
-		}).collect();
+		})
+		.collect();
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, recs?)?;

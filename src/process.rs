@@ -18,7 +18,7 @@ pub struct RunningProcess {
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 	use winapi::um::tlhelp32::{
-		CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
 		TH32CS_SNAPPROCESS,
 	};
 

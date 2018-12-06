@@ -35,8 +35,11 @@ where
 			Err(err) => {
 				if attempt >= max_attempts {
 					let msg = format!("There was an error while {}:\n\n{}\n\nPlease verify there are no Visual Studio Code processes still executing.", task, err);
-					let mb_result =
-						gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::RetryCancel);
+					let mb_result = gui::message_box(
+						&msg,
+						"Visual Studio Code",
+						gui::MessageBoxType::RetryCancel,
+					);
 
 					match mb_result {
 						gui::MessageBoxResult::Retry => {
