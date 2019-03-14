@@ -114,7 +114,7 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 				let size = -size as usize;
 
 				if size > 0 {
-					assert!(size % 2 == 0);
+					assert_eq!(size % 2, 0);
 
 					let mut u16data: Vec<u16> = vec![0; size / 2];
 					LittleEndian::read_u16_into(&slice[5..5 + size], &mut u16data);
