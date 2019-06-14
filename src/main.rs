@@ -398,7 +398,7 @@ fn handle_error(log_path: &str) {
 
 	msgs.push("Failed to install Visual Studio Code update.");
 	msgs.push("Updates may fail due to anti-virus software and/or runaway processes. Please try restarting your machine before attempting to update again.");
-	msgs.push("If update fails repeatedly, please attach the following log file to a new issue on GitHub:");
+	msgs.push("Please read the log file for more information:");
 	msgs.push(log_path);
 
 	let msg = msgs.join("\n\n");
