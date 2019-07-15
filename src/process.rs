@@ -60,7 +60,10 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 
 		loop {
 			result.push(RunningProcess {
-				name: from_utf16(&pe32.szExeFile)?,
+				name: from_utf16(&pe32.szExeFile).map_err(|e| {
+					CloseHandle(handle);
+					e
+				})?,
 				id: pe32.th32ProcessID,
 			});
 
