@@ -101,7 +101,7 @@ fn kill_process_if(
 			process.id,
 		);
 
-		if handle == ptr::null_mut() {
+		if handle.is_null() {
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				format!(
