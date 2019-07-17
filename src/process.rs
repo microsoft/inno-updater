@@ -32,20 +32,11 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 			));
 		}
 
-		let mut pe32 = PROCESSENTRY32W {
-			dwSize: 0,
-			cntUsage: 0,
-			th32ProcessID: 0,
-			th32DefaultHeapID: 0,
-			th32ModuleID: 0,
-			cntThreads: 0,
-			th32ParentProcessID: 0,
-			pcPriClassBase: 0,
-			dwFlags: 0,
-			szExeFile: [0u16; 260],
+		let mut pe32 = {
+			let mut pe32 = mem::MaybeUninit::<PROCESSENTRY32W>::zeroed();
+			(*(pe32.as_mut_ptr())).dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
+			pe32.assume_init()
 		};
-
-		pe32.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
 
 		if Process32FirstW(handle, &mut pe32) != TRUE {
 			CloseHandle(handle);
