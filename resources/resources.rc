@@ -11,7 +11,7 @@ STYLE 72 | 80 | 512 | 4 | 2147483648 | 12582912
 CAPTION "Visual Studio Code"
 FONT 8, "MS Shell Dlg", 400, 0, 0x0
 BEGIN
-    LTEXT           "Updating Visual Studio Code...",-1,11,10,66,8
+    LTEXT           "Updating Visual Studio Code...",-1,11,10,165,8
     // 8 == PBS_MARQUEE
     // 8388608 == WS_BORDER
     CONTROL         "",10001,"msctls_progress32",8 | 8388608,11,27,165,14
