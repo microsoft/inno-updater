@@ -30,7 +30,7 @@ steps:
    rustup target add i686-pc-windows-msvc
    rustc -vV
    cargo -vV
-   cargo-build --release --target i686-pc-windows-msvc --verbose
+   cargo-build --release --verbose
   displayName: Build
 
 - script: 'node tools\legal Cargo.lock'
