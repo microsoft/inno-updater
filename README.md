@@ -1,6 +1,6 @@
 # inno-updater
 
-[![Build status](https://ci.appveyor.com/api/projects/status/q3a8vi08gsgqc478?svg=true)](https://ci.appveyor.com/project/VSCode/inno-updater)
+[![Build Status](https://dev.azure.com/vscode/Inno%20Updater/_apis/build/status/microsoft.inno-updater?branchName=master)](https://dev.azure.com/vscode/Inno%20Updater/_build/latest?definitionId=25&branchName=master)
 
 Helper utility to enable background updates for VS Code in Windows
 
@@ -19,9 +19,9 @@ rustup target add i686-pc-windows-msvc
 
 ## Integration
 
-⭐️ To create a new release, simply push a new tag; this will kick off a [build](https://ci.appveyor.com/project/VSCode/inno-updater) and publish a [release](https://github.com/Microsoft/inno-updater/releases).
+⭐️ To create a new release, simply push a new tag; this will kick off a [build](https://dev.azure.com/vscode/Inno%20Updater/_build?definitionId=25&_a=summary) and publish a [release](https://github.com/microsoft/inno-updater/releases).
 
-⭐️ To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/Microsoft/vscode/tree/master/build/win32).
+⭐️ To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/microsoft/vscode/tree/master/build/win32).
 
 ## Contributing
 
