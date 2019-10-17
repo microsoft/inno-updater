@@ -1,0 +1,58 @@
+trigger:
+  branches:
+    include: ['*']
+  tags:
+    include: ['*']
+
+pool:
+  vmImage: 'vs2017-win2016'
+
+steps:
+- task: NodeTool@0
+  displayName: 'Install Node 10'
+  inputs:
+    versionSpec: 10.x
+
+- powershell: |
+   cd tools\legal
+   npm install
+  displayName: 'Install Tools Dependencies'
+
+- task: Fizcko.azure-devops-download-a-file.azure.devops.download.a.file.DownloadAFile@1
+  displayName: 'Download Rustup'
+  inputs:
+    strUrl: 'https://win.rustup.rs/'
+    strTargetFilename: 'rustup-init.exe'
+
+- powershell: |
+   .\rustup-init.exe -yv --default-toolchain stable --default-host i686-pc-windows-msvc
+   rustup target add i686-pc-windows-msvc
+   rustc -vV
+   cargo -vV
+   cargo build --release --target i686-pc-windows-msvc --verbose
+  displayName: Build
+
+- powershell: 'node tools\legal Cargo.lock'
+  displayName: 'Collect Dependencies'
+
+- task: CopyFiles@2
+  displayName: 'Collect Build Artifacts'
+  inputs:
+    Contents: |
+     target\**\inno_updater.exe
+     Cargo.lock
+    TargetFolder: '$(Build.ArtifactStagingDirectory)'
+    CleanTargetFolder: true
+    flattenFolders: true
+
+- task: PublishBuildArtifacts@1
+  displayName: 'Publish Artifact'
+  inputs:
+    ArtifactName: 'inno_updater'
+
+- task: GitHubRelease@1
+  displayName: 'Create GitHub Release'
+  inputs:
+    gitHubConnection: 'GitHub connection 1'
+  condition: and(succeeded(), startsWith(variables['Build.SourceBranch'], 'refs/tags/'))
+
