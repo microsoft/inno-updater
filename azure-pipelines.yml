@@ -13,9 +13,10 @@ steps:
   inputs:
     versionSpec: 10.x
 
-- powershell: |
-   cd tools\legal
-   npm install
+- task: Npm@1
+  inputs:
+    workingDir: tools/legal
+    verbose: false
   displayName: 'Install Tools Dependencies'
 
 - task: Fizcko.azure-devops-download-a-file.azure.devops.download.a.file.DownloadAFile@1
@@ -24,15 +25,15 @@ steps:
     strUrl: 'https://win.rustup.rs/'
     strTargetFilename: 'rustup-init.exe'
 
-- powershell: |
+- script: |
    .\rustup-init.exe -yv --default-toolchain stable --default-host i686-pc-windows-msvc
    rustup target add i686-pc-windows-msvc
    rustc -vV
    cargo -vV
-   cargo build --release --target i686-pc-windows-msvc --verbose
+   cargo-build --release --target i686-pc-windows-msvc --verbose
   displayName: Build
 
-- powershell: 'node tools\legal Cargo.lock'
+- script: 'node tools\legal Cargo.lock'
   displayName: 'Collect Dependencies'
 
 - task: CopyFiles@2
