@@ -12,6 +12,14 @@ jobs:
         with:
           toolchain: stable
           target: i686-pc-windows-msvc
-      - uses: actions-rs/cargo@v1
+      - run: cargo build --release --verbose
+      - uses: actions/setup-node@v2
         with:
-          command: check
+          node-version: '14'
+      - run: node tools\legal Cargo.lock
+      - uses: actions/upload-artifact@v2
+        with:
+          name: inno-updater
+          path: |
+            target/**/inno_updater.exe
+            Cargo.lock
