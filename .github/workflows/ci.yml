@@ -16,7 +16,9 @@ jobs:
       - uses: actions/setup-node@v2
         with:
           node-version: '14'
-      - run: node tools\legal Cargo.lock
+      - run: npm install
+        working-directory: tools/legal
+      - run: node tools/legal Cargo.lock
       - uses: actions/upload-artifact@v2
         with:
           name: inno-updater
