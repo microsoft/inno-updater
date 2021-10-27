@@ -23,5 +23,5 @@ jobs:
         with:
           name: inno-updater
           path: |
-            target/**/inno_updater.exe
+            target/*/release/inno_updater.exe
             Cargo.lock
