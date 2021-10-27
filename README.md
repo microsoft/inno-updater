@@ -1,6 +1,6 @@
 # inno-updater
 
-[![Build Status](https://dev.azure.com/vscode/Inno%20Updater/_apis/build/status/microsoft.inno-updater?branchName=main)](https://dev.azure.com/vscode/Inno%20Updater/_build/latest?definitionId=25&branchName=main)
+[![CI](https://github.com/microsoft/inno-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/inno-updater/actions/workflows/ci.yml)
 
 Helper utility to enable background updates for VS Code in Windows
 
@@ -15,7 +15,7 @@ Helper utility to enable background updates for VS Code in Windows
 
 ## Contributing
 
-This project welcomes contributions and suggestions.  Most contributions require you to agree to a
+This project welcomes contributions and suggestions. Most contributions require you to agree to a
 Contributor License Agreement (CLA) declaring that you have the right to, and actually do, grant us
 the rights to use your contribution. For details, visit https://cla.microsoft.com.
 
