@@ -118,13 +118,13 @@ fn delete_existing_version(
 					continue;
 				}
 
-				// don't delete any of the unins* files
-				if String::from(entry_name).starts_with("unins") {
-					continue;
-				}
-
 				// don't delete ourselves
 				if entry_name == "tools" {
+					continue;
+				}
+				
+				// don't delete any of the unins* files
+				if entry_name.starts_with("unins") {
 					continue;
 				}
 			}
