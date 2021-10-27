@@ -12,14 +12,14 @@ use std::io::prelude::*;
 const BLOCK_MAX_SIZE: usize = 4096;
 
 pub struct BlockRead<'a> {
-	reader: &'a mut Read,
+	reader: &'a mut dyn Read,
 	buffer: [u8; BLOCK_MAX_SIZE],
 	pos: usize,
 	left: usize,
 }
 
 impl<'a> BlockRead<'a> {
-	pub fn new(reader: &'a mut Read) -> BlockRead<'a> {
+	pub fn new(reader: &'a mut dyn Read) -> BlockRead<'a> {
 		BlockRead {
 			reader,
 			buffer: [0; BLOCK_MAX_SIZE],
@@ -95,13 +95,13 @@ impl<'a> Read for BlockRead<'a> {
 }
 
 pub struct BlockWrite<'a> {
-	writer: &'a mut Write,
+	writer: &'a mut dyn Write,
 	buffer: [u8; BLOCK_MAX_SIZE],
 	pos: usize,
 }
 
 impl<'a> BlockWrite<'a> {
-	pub fn new(writer: &'a mut Write) -> BlockWrite<'a> {
+	pub fn new(writer: &'a mut dyn Write) -> BlockWrite<'a> {
 		BlockWrite {
 			writer,
 			buffer: [0; BLOCK_MAX_SIZE],

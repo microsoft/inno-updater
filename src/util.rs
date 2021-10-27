@@ -18,9 +18,9 @@ use strings::from_utf16;
  *  - 25: ~4 minutes
  *  - 27: ~5 minutes
  */
-pub fn retry<F, R, T>(task: &str, closure: F, max_attempts: T) -> Result<R, Box<error::Error>>
+pub fn retry<F, R, T>(task: &str, closure: F, max_attempts: T) -> Result<R, Box<dyn error::Error>>
 where
-	F: Fn(u32) -> Result<R, Box<error::Error>>,
+	F: Fn(u32) -> Result<R, Box<dyn error::Error>>,
 	T: Into<Option<u32>>,
 {
 	let mut attempt: u32 = 0;
@@ -35,11 +35,8 @@ where
 			Err(err) => {
 				if attempt >= max_attempts {
 					let msg = format!("There was an error while {}:\n\n{}\n\nPlease verify there are no Visual Studio Code processes still executing.", task, err);
-					let mb_result = gui::message_box(
-						&msg,
-						"Visual Studio Code",
-						gui::MessageBoxType::RetryCancel,
-					);
+					let mb_result =
+						gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::RetryCancel);
 
 					match mb_result {
 						gui::MessageBoxResult::Retry => {
@@ -57,7 +54,7 @@ where
 	}
 }
 
-pub fn get_last_error_message() -> Result<String, Box<error::Error>> {
+pub fn get_last_error_message() -> Result<String, Box<dyn error::Error>> {
 	use winapi::um::errhandlingapi::GetLastError;
 	use winapi::um::winbase::{
 		FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS,

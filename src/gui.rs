@@ -27,8 +27,8 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 	use winapi::um::commctrl::PBM_SETMARQUEE;
 	use winapi::um::processthreadsapi::GetCurrentThreadId;
 	use winapi::um::winuser::{
-		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
-		HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG,
+		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow, HWND_TOPMOST,
+		SW_HIDE, WM_DESTROY, WM_INITDIALOG,
 	};
 
 	match msg {
@@ -37,7 +37,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 			if !data.silent {
 				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, PBM_SETMARQUEE, 1, 0);
 
-				let mut rect: RECT = mem::uninitialized();
+				let mut rect = mem::MaybeUninit::<RECT>::uninit().assume_init();
 				GetWindowRect(hwnd, &mut rect);
 
 				let width = rect.right - rect.left;
@@ -58,7 +58,8 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 				ShowWindow(hwnd, SW_HIDE);
 			}
 
-			data.tx
+			data
+				.tx
 				.send(ProgressWindow {
 					ui_thread_id: GetCurrentThreadId(),
 				})
@@ -130,8 +131,8 @@ pub enum MessageBoxResult {
 
 pub fn message_box(text: &str, caption: &str, mbtype: MessageBoxType) -> MessageBoxResult {
 	use winapi::um::winuser::{
-		MessageBoxW, IDABORT, IDCANCEL, IDCONTINUE, IDIGNORE, IDNO, IDOK, IDRETRY, IDTRYAGAIN,
-		IDYES, MB_ICONERROR, MB_RETRYCANCEL, MB_SYSTEMMODAL,
+		MessageBoxW, IDABORT, IDCANCEL, IDCONTINUE, IDIGNORE, IDNO, IDOK, IDRETRY, IDTRYAGAIN, IDYES,
+		MB_ICONERROR, MB_RETRYCANCEL, MB_SYSTEMMODAL,
 	};
 
 	let result: i32;

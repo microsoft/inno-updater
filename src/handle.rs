@@ -12,7 +12,7 @@ use winapi::um::winnt::HANDLE;
 pub struct FileHandle(HANDLE);
 
 impl FileHandle {
-    pub fn new(path: &Path) -> Result<FileHandle, Box<error::Error>> {
+    pub fn new(path: &Path) -> Result<FileHandle, Box<dyn error::Error>> {
         use winapi::um::fileapi::CreateFileW;
         use winapi::um::fileapi::OPEN_EXISTING;
         use winapi::um::handleapi::INVALID_HANDLE_VALUE;
@@ -37,14 +37,15 @@ impl FileHandle {
                         "Failed to create file handle: {}",
                         util::get_last_error_message()?
                     ),
-                ).into());
+                )
+                .into());
             }
 
             Ok(FileHandle(handle))
         }
     }
 
-    pub fn mark_for_deletion(&self) -> Result<(), Box<error::Error>> {
+    pub fn mark_for_deletion(&self) -> Result<(), Box<dyn error::Error>> {
         use std::mem;
         use winapi::shared::minwindef::{DWORD, FALSE, LPVOID, TRUE};
         use winapi::um::fileapi::SetFileInformationByHandle;
@@ -67,14 +68,15 @@ impl FileHandle {
                         "Failed to mark file for deletion: {}",
                         util::get_last_error_message()?
                     ),
-                ).into());
+                )
+                .into());
             }
         }
 
         Ok(())
     }
 
-    pub fn close(&self) -> Result<(), Box<error::Error>> {
+    pub fn close(&self) -> Result<(), Box<dyn error::Error>> {
         use winapi::shared::minwindef::FALSE;
         use winapi::um::handleapi::CloseHandle;
 
@@ -86,7 +88,8 @@ impl FileHandle {
                         "Failed to close file handle: {}",
                         util::get_last_error_message()?
                     ),
-                ).into());
+                )
+                .into());
             }
         }
 

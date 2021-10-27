@@ -18,8 +18,7 @@ pub struct RunningProcess {
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
 	use winapi::um::tlhelp32::{
-		CreateToolhelp32Snapshot, PROCESSENTRY32W, Process32FirstW, Process32NextW,
-		TH32CS_SNAPPROCESS,
+		CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
 	};
 
 	unsafe {
@@ -81,7 +80,7 @@ fn kill_process_if(
 	log: &slog::Logger,
 	process: &RunningProcess,
 	path: &Path,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	use winapi::shared::minwindef::MAX_PATH;
 	use winapi::um::handleapi::CloseHandle;
 	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
@@ -102,13 +101,16 @@ fn kill_process_if(
 		);
 
 		if handle.is_null() {
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				format!(
-					"Failed to open process: {}",
-					util::get_last_error_message()?
-				),
-			).into());
+			return Err(
+				io::Error::new(
+					io::ErrorKind::Other,
+					format!(
+						"Failed to open process: {}",
+						util::get_last_error_message()?
+					),
+				)
+				.into(),
+			);
 		}
 
 		let mut raw_path = [0u16; MAX_PATH];
@@ -122,13 +124,16 @@ fn kill_process_if(
 		if len == 0 {
 			CloseHandle(handle);
 
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				format!(
-					"Failed to get process file name: {}",
-					util::get_last_error_message()?
-				),
-			).into());
+			return Err(
+				io::Error::new(
+					io::ErrorKind::Other,
+					format!(
+						"Failed to get process file name: {}",
+						util::get_last_error_message()?
+					),
+				)
+				.into(),
+			);
 		}
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
@@ -157,7 +162,7 @@ fn kill_process_if(
 	}
 }
 
-pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<error::Error>> {
+pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error::Error>> {
 	let file_name = path.file_name().ok_or(io::Error::new(
 		io::ErrorKind::Other,
 		"Could not get process file name",

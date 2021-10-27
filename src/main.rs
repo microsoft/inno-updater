@@ -35,7 +35,7 @@ use std::{env, error, fmt, fs, io, thread};
 
 const VERSION: &'static str = env!("CARGO_PKG_VERSION");
 
-fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<error::Error>> {
+fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<dyn error::Error>> {
 	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
 
@@ -50,7 +50,11 @@ fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<error::Error>> {
 	Ok((header, recs))
 }
 
-fn write_file(path: &Path, header: &Header, recs: Vec<FileRec>) -> Result<(), Box<error::Error>> {
+fn write_file(
+	path: &Path,
+	header: &Header,
+	recs: Vec<FileRec>,
+) -> Result<(), Box<dyn error::Error>> {
 	let mut output_file = fs::File::create(path)?;
 
 	// skip header
@@ -88,7 +92,7 @@ fn delete_existing_version(
 	log: &slog::Logger,
 	root_path: &Path,
 	update_folder_name: &str,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	let mut directories: LinkedList<PathBuf> = LinkedList::new();
 	let mut top_directories: LinkedList<PathBuf> = LinkedList::new();
 	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
@@ -139,7 +143,7 @@ fn delete_existing_version(
 				let msg = format!("Opening file handle: {:?}", entry_path);
 				let file_handle = util::retry(
 					&msg,
-					|attempt| -> Result<FileHandle, Box<error::Error>> {
+					|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
 						info!(
 							log,
 							"Get file handle: {:?} (attempt {})", entry_path, attempt
@@ -160,7 +164,7 @@ fn delete_existing_version(
 	for file_handle in &file_handles {
 		util::retry(
 			"marking a file for deletion",
-			|_| -> Result<(), Box<error::Error>> { file_handle.mark_for_deletion() },
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.mark_for_deletion() },
 			None,
 		)?;
 	}
@@ -170,7 +174,7 @@ fn delete_existing_version(
 	for file_handle in &file_handles {
 		util::retry(
 			"closing a file handle",
-			|_| -> Result<(), Box<error::Error>> { file_handle.close() },
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.close() },
 			None,
 		)?;
 	}
@@ -181,7 +185,7 @@ fn delete_existing_version(
 		let msg = format!("Deleting a directory: {:?}", dir);
 		util::retry(
 			&msg,
-			|attempt| -> Result<(), Box<error::Error>> {
+			|attempt| -> Result<(), Box<dyn error::Error>> {
 				if !dir.exists() {
 					return Ok(());
 				}
@@ -205,7 +209,7 @@ fn move_update(
 	log: &slog::Logger,
 	uninstdat_path: &Path,
 	update_folder_name: &str,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	info!(
 		log,
 		"move_update: {:?}, {}", uninstdat_path, update_folder_name
@@ -262,7 +266,7 @@ fn patch_uninstdat(
 	log: &slog::Logger,
 	uninstdat_path: &PathBuf,
 	update_folder_name: &str,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	let (header, recs) = read_file(&uninstdat_path)?;
 
 	info!(log, "header: {:?}", header);
@@ -296,7 +300,7 @@ fn do_update(
 	log: &slog::Logger,
 	code_path: &PathBuf,
 	update_folder_name: &str,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
 
 	let root_path = code_path.parent().ok_or(io::Error::new(
@@ -324,7 +328,7 @@ fn update(
 	code_path: &PathBuf,
 	update_folder_name: &str,
 	silent: bool,
-) -> Result<(), Box<error::Error>> {
+) -> Result<(), Box<dyn error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
 	info!(log, "Inno Updater v{}", VERSION);
@@ -360,21 +364,24 @@ impl error::Error for ArgumentError {
 		"ArgumentError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
 
-fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>> {
+fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<dyn error::Error>> {
 	info!(log, "Starting: {}, {}", args[1], args[2]);
 
 	let code_path = PathBuf::from(&args[1]);
 
 	if !code_path.is_absolute() {
-		return Err(ArgumentError(format!(
-			"Code path needs to be absolute. Instead got: {}",
-			args[1]
-		)).into());
+		return Err(
+			ArgumentError(format!(
+				"Code path needs to be absolute. Instead got: {}",
+				args[1]
+			))
+			.into(),
+		);
 	}
 
 	if !code_path.exists() {
@@ -384,10 +391,13 @@ fn _main(log: &slog::Logger, args: &Vec<String>) -> Result<(), Box<error::Error>
 	let silent = args[2].clone();
 
 	if silent != "true" && silent != "false" {
-		return Err(ArgumentError(format!(
-			"Silent needs to be true or false. Instead got: {}",
-			silent
-		)).into());
+		return Err(
+			ArgumentError(format!(
+				"Silent needs to be true or false. Instead got: {}",
+				silent
+			))
+			.into(),
+		);
 	}
 
 	update(log, &code_path, "_", silent == "true")
@@ -441,7 +451,7 @@ fn __main(args: &Vec<String>) -> i32 {
 	}
 }
 
-fn parse(path: &Path) -> Result<(), Box<error::Error>> {
+fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 	let (header, recs) = read_file(path)?;
 
 	println!("{:?}", header);
@@ -498,7 +508,7 @@ fn main() {
 		let window = rx.recv().unwrap();
 		let result = util::retry(
 			"simulating a failed retry operation",
-			|_| -> Result<u32, Box<error::Error>> {
+			|_| -> Result<u32, Box<dyn error::Error>> {
 				Err(Box::new(std::io::Error::new(
 					std::io::ErrorKind::Other,
 					"[[Simulated error message]]",

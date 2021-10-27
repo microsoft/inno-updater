@@ -88,7 +88,7 @@ impl<'a> error::Error for StringDecodeError<'a> {
 		"StringDecodeError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
@@ -98,13 +98,13 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 	let mut slice = data.clone();
 
 	loop {
-		let reader: &mut Read = &mut slice.clone();
+		let reader: &mut dyn Read = &mut slice.clone();
 		let byte_result = reader
 			.read_u8()
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
 
 		match byte_result {
-			0x00...0xfc => panic!("What 0x{:x}", byte_result),
+			0x00..=0xfc => panic!("What 0x{:x}", byte_result),
 			0xfd => panic!("What 0x{:x}", byte_result),
 			0xfe => {
 				let size = reader
@@ -132,7 +132,6 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 				}
 				return Ok(result);
 			}
-			_ => return Err(StringDecodeError("Invalid file rec string header")),
 		}
 	}
 }
@@ -151,7 +150,7 @@ impl<'a> error::Error for StringEncodeError<'a> {
 		"StringEncodeError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
@@ -199,7 +198,7 @@ impl<'a> error::Error for FileRecParseError<'a> {
 		"FileRecParseError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
@@ -218,7 +217,7 @@ impl<'a> error::Error for FileRecWriteError<'a> {
 		"FileRecWriteError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
@@ -237,13 +236,13 @@ impl error::Error for RebaseError {
 		"RebaseError"
 	}
 
-	fn cause(&self) -> Option<&error::Error> {
+	fn cause(&self) -> Option<&dyn error::Error> {
 		None
 	}
 }
 
 impl<'a> FileRec {
-	pub fn from_reader<'b>(reader: &mut Read) -> Result<FileRec, FileRecParseError<'b>> {
+	pub fn from_reader<'b>(reader: &mut dyn Read) -> Result<FileRec, FileRecParseError<'b>> {
 		let typ = reader
 			.read_u16::<LittleEndian>()
 			.map_err(|_| FileRecParseError("Failed to parse file rec typ"))?;
@@ -252,8 +251,7 @@ impl<'a> FileRec {
 			.map_err(|_| FileRecParseError("Failed to parse file rec extra data"))?;
 		let data_size = reader
 			.read_u32::<LittleEndian>()
-			.map_err(|_| FileRecParseError("Failed to parse file rec data size"))?
-			as usize;
+			.map_err(|_| FileRecParseError("Failed to parse file rec data size"))? as usize;
 
 		if data_size > 0x8000000 {
 			return Err(FileRecParseError("File rec data size too large"));
@@ -273,7 +271,7 @@ impl<'a> FileRec {
 		})
 	}
 
-	pub fn to_writer<'b>(&self, writer: &mut Write) -> Result<(), FileRecWriteError<'b>> {
+	pub fn to_writer<'b>(&self, writer: &mut dyn Write) -> Result<(), FileRecWriteError<'b>> {
 		writer
 			.write_u16::<LittleEndian>(self.typ as u16)
 			.map_err(|_| FileRecWriteError("Failed to write file rec typ to buffer"))?;
@@ -293,7 +291,7 @@ impl<'a> FileRec {
 		Ok(())
 	}
 
-	pub fn rebase(&self, update_path: &Path) -> Result<FileRec, Box<error::Error>> {
+	pub fn rebase(&self, update_path: &Path) -> Result<FileRec, Box<dyn error::Error>> {
 		let paths = decode_strings(&self.data)?;
 
 		let from = update_path.to_str().ok_or(RebaseError)?;

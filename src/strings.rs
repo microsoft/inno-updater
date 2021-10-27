@@ -15,7 +15,10 @@ pub enum ReadUtf8StringError {
 	UTF8Error(string::FromUtf8Error),
 }
 
-pub fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, ReadUtf8StringError> {
+pub fn read_utf8_string(
+	reader: &mut dyn Read,
+	capacity: usize,
+) -> Result<String, ReadUtf8StringError> {
 	let mut vec = vec![0; capacity];
 
 	reader
@@ -29,7 +32,7 @@ pub fn read_utf8_string(reader: &mut Read, capacity: usize) -> Result<String, Re
 }
 
 pub fn write_utf8_string(
-	writer: &mut Write,
+	writer: &mut dyn Write,
 	string: &String,
 	capacity: usize,
 ) -> Result<(), io::Error> {
