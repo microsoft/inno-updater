@@ -1,7 +1,10 @@
 on: [push, pull_request]
 
+name: CI
+
 jobs:
   ci:
+    name: CI
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
