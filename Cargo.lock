@@ -42,7 +42,7 @@ dependencies = [
  "slog",
  "slog-async",
  "slog-term",
- "winapi 0.3.4",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -205,7 +205,7 @@ checksum = "a15375f1df02096fb3317256ce2cee6a1f42fc84ea5ad5fc8c421cfe40c73098"
 dependencies = [
  "libc",
  "redox_syscall",
- "winapi 0.3.4",
+ "winapi 0.3.9",
 ]
 
 [[package]]
@@ -231,9 +231,9 @@ checksum = "167dc9d6949a9b857f3451275e911c3f44255842c1f7a76f33c55103a909087a"
 
 [[package]]
 name = "winapi"
-version = "0.3.4"
+version = "0.3.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "04e3bd221fcbe8a271359c04f21a76db7d0c6028862d1bb5512d85e1e2eb5bb3"
+checksum = "5c839a674fcd7a98952e593242ea400abe93992746761e38641405d28b00f419"
 dependencies = [
  "winapi-i686-pc-windows-gnu",
  "winapi-x86_64-pc-windows-gnu",

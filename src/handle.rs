@@ -53,7 +53,7 @@ impl FileHandle {
         use winapi::um::minwinbase::FileDispositionInfo;
 
         unsafe {
-            let mut info = FILE_DISPOSITION_INFO { DeleteFile: TRUE };
+            let mut info = FILE_DISPOSITION_INFO { DeleteFile: TRUE as u8 };
             let result = SetFileInformationByHandle(
                 self.0,
                 FileDispositionInfo,
