@@ -9,7 +9,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
-    "got": "^8.0.3",
+    "got": "^12.1.0",
     "minimist": "^1.2.0",
     "mz": "^2.7.0",
     "p-all": "^1.0.0",
