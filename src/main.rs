@@ -127,6 +127,11 @@ fn delete_existing_version(
 				if entry_name.starts_with("unins") {
 					continue;
 				}
+
+				// don't delete the sparse package folder
+				if entry_name == "appx" {
+					continue;
+				}
 			}
 
 			let entry_file_type = entry.file_type()?;
