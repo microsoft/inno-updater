@@ -62,7 +62,7 @@ pub struct FileRec {
 	data: Vec<u8>,
 }
 
-impl<'a> fmt::Debug for FileRec {
+impl fmt::Debug for FileRec {
 	fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
 		write!(
 			formatter,
@@ -95,10 +95,10 @@ impl<'a> error::Error for StringDecodeError<'a> {
 
 fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>> {
 	let mut result: Vec<String> = Vec::with_capacity(10);
-	let mut slice = data.clone();
+	let mut slice = data;
 
 	loop {
-		let reader: &mut dyn Read = &mut slice.clone();
+		let reader: &mut dyn Read = &mut slice;
 		let byte_result = reader
 			.read_u8()
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
@@ -241,7 +241,7 @@ impl error::Error for RebaseError {
 	}
 }
 
-impl<'a> FileRec {
+impl FileRec {
 	pub fn from_reader<'b>(reader: &mut dyn Read) -> Result<FileRec, FileRecParseError<'b>> {
 		let typ = reader
 			.read_u16::<LittleEndian>()
@@ -251,7 +251,8 @@ impl<'a> FileRec {
 			.map_err(|_| FileRecParseError("Failed to parse file rec extra data"))?;
 		let data_size = reader
 			.read_u32::<LittleEndian>()
-			.map_err(|_| FileRecParseError("Failed to parse file rec data size"))? as usize;
+			.map_err(|_| FileRecParseError("Failed to parse file rec data size"))?
+			as usize;
 
 		if data_size > 0x8000000 {
 			return Err(FileRecParseError("File rec data size too large"));
@@ -303,8 +304,8 @@ impl<'a> FileRec {
 		let rebased_paths: Vec<String> = paths
 			.iter()
 			.map(|p| {
-				if p.starts_with(from) {
-					[to, &p[from.len()..]].join("")
+				if let Some(p) = p.strip_prefix(from) {
+					format!("{to}{p}")
 				} else {
 					p.clone()
 				}

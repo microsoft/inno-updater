@@ -1,0 +1,4 @@
+hard_tabs = true
+
+# Requires nightly
+# imports_granularity = "Module"

@@ -5,9 +5,8 @@
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use crc::{crc32, Hasher32};
-use std::cmp;
-use std::io;
 use std::io::prelude::*;
+use std::{cmp, io};
 
 const BLOCK_MAX_SIZE: usize = 4096;
 
@@ -48,8 +47,8 @@ impl<'a> BlockRead<'a> {
 		}
 
 		let size = size as usize;
-		let mut buffer = &mut self.buffer[..size];
-		self.reader.read_exact(&mut buffer)?;
+		let buffer = &mut self.buffer[..size];
+		self.reader.read_exact(buffer)?;
 
 		let mut digest = crc32::Digest::new(crc32::IEEE);
 		digest.write(buffer);

@@ -18,6 +18,12 @@ fn main() {
 
 	assert!(ecode.success(), "Resource compiler failed");
 
-	println!("cargo:rustc-link-search=native={}", resources.parent().unwrap().to_str().unwrap());
-	println!("cargo:rustc-link-lib={}", resources.file_stem().unwrap().to_str().unwrap());
+	println!(
+		"cargo:rustc-link-search=native={}",
+		resources.parent().unwrap().to_str().unwrap()
+	);
+	println!(
+		"cargo:rustc-link-lib={}",
+		resources.file_stem().unwrap().to_str().unwrap()
+	);
 }

@@ -35,8 +35,11 @@ where
 			Err(err) => {
 				if attempt >= max_attempts {
 					let msg = format!("There was an error while {}:\n\n{}\n\nPlease verify there are no Visual Studio Code processes still executing.", task, err);
-					let mb_result =
-						gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::RetryCancel);
+					let mb_result = gui::message_box(
+						&msg,
+						"Visual Studio Code",
+						gui::MessageBoxType::RetryCancel,
+					);
 
 					match mb_result {
 						gui::MessageBoxResult::Retry => {
@@ -55,8 +58,8 @@ where
 }
 
 pub fn get_last_error_message() -> Result<String, Box<dyn error::Error>> {
-	use winapi::um::errhandlingapi::GetLastError;
-	use winapi::um::winbase::{
+	use windows_sys::Win32::Foundation::GetLastError;
+	use windows_sys::Win32::System::Diagnostics::Debug::{
 		FormatMessageW, FORMAT_MESSAGE_FROM_SYSTEM, FORMAT_MESSAGE_IGNORE_INSERTS,
 	};
 

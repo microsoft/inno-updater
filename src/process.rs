@@ -3,22 +3,22 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use slog;
+use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::{error, io, mem, ptr, thread, time};
 use strings::from_utf16;
-use util;
-use winapi::shared::minwindef::{DWORD, TRUE};
+use {slog, util};
 
 pub struct RunningProcess {
 	pub name: String,
-	pub id: DWORD,
+	pub id: u32,
 }
 
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
-	use winapi::um::handleapi::{CloseHandle, INVALID_HANDLE_VALUE};
-	use winapi::um::tlhelp32::{
-		CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W, TH32CS_SNAPPROCESS,
+	use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+	use windows_sys::Win32::System::Diagnostics::ToolHelp::{
+		CreateToolhelp32Snapshot, Process32FirstW, Process32NextW, PROCESSENTRY32W,
+		TH32CS_SNAPPROCESS,
 	};
 
 	unsafe {
@@ -46,7 +46,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 
 		pe32.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
 
-		if Process32FirstW(handle, &mut pe32) != TRUE {
+		if Process32FirstW(handle, &mut pe32).is_negative() {
 			CloseHandle(handle);
 
 			return Err(io::Error::new(
@@ -66,13 +66,13 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 				id: pe32.th32ProcessID,
 			});
 
-			if Process32NextW(handle, &mut pe32) != TRUE {
+			if Process32NextW(handle, &mut pe32).is_negative() {
 				CloseHandle(handle);
 				break;
 			}
 		}
 
-		return Ok(result);
+		Ok(result)
 	}
 }
 
@@ -84,11 +84,12 @@ fn kill_process_if(
 	process: &RunningProcess,
 	path: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
-	use winapi::shared::minwindef::MAX_PATH;
-	use winapi::um::handleapi::CloseHandle;
-	use winapi::um::processthreadsapi::{OpenProcess, TerminateProcess};
-	use winapi::um::psapi::GetModuleFileNameExW;
-	use winapi::um::winnt::{PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ};
+	use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+	use windows_sys::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
+	use windows_sys::Win32::System::Threading::{
+		OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
+		PROCESS_VM_READ,
+	};
 
 	info!(
 		log,
@@ -97,46 +98,38 @@ fn kill_process_if(
 
 	unsafe {
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
-		let handle = OpenProcess(
+		let handle: HANDLE = OpenProcess(
 			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE,
 			0,
 			process.id,
 		);
 
-		if handle.is_null() {
-			return Err(
-				io::Error::new(
-					io::ErrorKind::Other,
-					format!(
-						"Failed to open process: {}",
-						util::get_last_error_message()?
-					),
-				)
-				.into(),
-			);
+		if ptr::eq(handle as *mut c_void, ptr::null()) {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed to open process: {}",
+					util::get_last_error_message()?
+				),
+			)
+			.into());
 		}
 
-		let mut raw_path = [0u16; MAX_PATH];
-		let len = GetModuleFileNameExW(
-			handle,
-			ptr::null_mut(),
-			raw_path.as_mut_ptr(),
-			MAX_PATH as DWORD,
-		) as usize;
+		let mut raw_path = [0u16; MAX_PATH as usize];
+		let len = K32GetModuleFileNameExW(handle, mem::zeroed(), raw_path.as_mut_ptr(), MAX_PATH)
+			as usize;
 
 		if len == 0 {
 			CloseHandle(handle);
 
-			return Err(
-				io::Error::new(
-					io::ErrorKind::Other,
-					format!(
-						"Failed to get process file name: {}",
-						util::get_last_error_message()?
-					),
-				)
-				.into(),
-			);
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed to get process file name: {}",
+					util::get_last_error_message()?
+				),
+			)
+			.into());
 		}
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
@@ -151,7 +144,7 @@ fn kill_process_if(
 			"Found {} running, pid {}, attempting to kill...", process.name, process.id
 		);
 
-		if TerminateProcess(handle, 0) != TRUE {
+		if TerminateProcess(handle, 0).is_negative() {
 			return Err(io::Error::new(io::ErrorKind::Other, "Failed to kill process").into());
 		}
 
@@ -166,15 +159,16 @@ fn kill_process_if(
 }
 
 pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error::Error>> {
-	let file_name = path.file_name().ok_or(io::Error::new(
-		io::ErrorKind::Other,
-		"Could not get process file name",
-	))?;
+	let file_name = path
+		.file_name()
+		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get process file name"))?;
 
-	let file_name = file_name.to_str().ok_or(io::Error::new(
-		io::ErrorKind::Other,
-		"Could not get convert file name to str",
-	))?;
+	let file_name = file_name.to_str().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get convert file name to str",
+		)
+	})?;
 
 	let mut attempt: u32 = 0;
 

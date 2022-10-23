@@ -112,8 +112,7 @@ impl Header {
 			.map_err(|_| HeaderParseError("Failed to parse header flags"))?;
 
 		let mut reserved = [0; 108];
-		read
-			.read_exact(&mut reserved)
+		read.read_exact(&mut reserved)
 			.map_err(|_| HeaderParseError("Failed to parse header reserved"))?;
 
 		let crc = read

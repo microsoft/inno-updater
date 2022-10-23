@@ -11,8 +11,20 @@ slog = "2.1.1"
 slog-async = "2.2.0"
 slog-term = "2.3.0"
 
-[target.'cfg(windows)'.dependencies]
-winapi = { version = "^0.3.9", features = ["winuser", "libloaderapi", "commctrl", "processthreadsapi", "tlhelp32", "handleapi", "psapi", "errhandlingapi", "winbase", "shellapi"] }
+[target.'cfg(windows)'.dependencies.windows-sys]
+version = "0.42"
+features = [
+    "Win32_Foundation",
+    "Win32_System_Shutdown",
+    "Win32_UI_WindowsAndMessaging",
+    "Win32_System_Threading",
+    "Win32_System_LibraryLoader",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_Storage_FileSystem",
+    "Win32_Security",
+    "Win32_System_ProcessStatus",
+    "Win32_System_Diagnostics_ToolHelp"
+]
 
 [profile.release]
 lto = true

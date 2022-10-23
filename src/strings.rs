@@ -4,10 +4,9 @@
  *----------------------------------------------------------------------------------------*/
 
 use std::ffi::OsStr;
-use std::io;
 use std::io::prelude::*;
 use std::os::windows::ffi::OsStrExt;
-use std::string;
+use std::{io, string};
 
 #[derive(Debug)]
 pub enum ReadUtf8StringError {
@@ -23,11 +22,11 @@ pub fn read_utf8_string(
 
 	reader
 		.read_exact(&mut vec)
-		.map_err(|err| ReadUtf8StringError::IOError(err))
+		.map_err(ReadUtf8StringError::IOError)
 		.and_then(|_| {
 			let pos = vec.iter().position(|&x| x == 0).unwrap_or(64);
 			let bar = &vec[0..pos];
-			String::from_utf8(Vec::from(bar)).map_err(|err| ReadUtf8StringError::UTF8Error(err))
+			String::from_utf8(Vec::from(bar)).map_err(ReadUtf8StringError::UTF8Error)
 		})
 }
 
@@ -37,7 +36,7 @@ pub fn write_utf8_string(
 	capacity: usize,
 ) -> Result<(), io::Error> {
 	let bytes = string.as_bytes();
-	writer.write_all(&bytes)?;
+	writer.write_all(bytes)?;
 
 	let rest = vec![0; capacity - bytes.len()];
 	writer.write_all(&rest)?;
