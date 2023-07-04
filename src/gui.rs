@@ -6,13 +6,11 @@
 use std::sync::mpsc::Sender;
 use std::{mem, ptr};
 use strings::to_utf16;
-use winapi::shared::basetsd::INT_PTR;
-use winapi::shared::minwindef::{BOOL, DWORD, LPARAM, UINT, WPARAM};
-use winapi::shared::ntdef::LPCWSTR;
-use winapi::shared::windef::HWND;
+use windows_sys::core::PCWSTR;
+use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
 
 extern "system" {
-	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: LPCWSTR) -> BOOL;
+	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: PCWSTR) -> BOOL;
 	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
 
@@ -21,23 +19,27 @@ struct DialogData {
 	tx: Sender<ProgressWindow>,
 }
 
-unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -> INT_PTR {
+unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) -> isize {
 	use resources;
-	use winapi::shared::windef::RECT;
-	use winapi::um::commctrl::PBM_SETMARQUEE;
-	use winapi::um::processthreadsapi::GetCurrentThreadId;
-	use winapi::um::winuser::{
-		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow, HWND_TOPMOST,
-		SW_HIDE, WM_DESTROY, WM_INITDIALOG,
+	use windows_sys::Win32::Foundation::RECT;
+	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
+	use windows_sys::Win32::UI::WindowsAndMessaging::{
+		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
+		HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
 
 	match msg {
 		WM_INITDIALOG => {
 			let data = &*(l as *const DialogData);
 			if !data.silent {
-				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, PBM_SETMARQUEE, 1, 0);
+				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, WM_USER + 10, 1, 0);
 
-				let mut rect = mem::MaybeUninit::<RECT>::uninit().assume_init();
+				let mut rect = RECT {
+					top: 0,
+					left: 0,
+					bottom: 0,
+					right: 0,
+				};
 				GetWindowRect(hwnd, &mut rect);
 
 				let width = rect.right - rect.left;
@@ -58,8 +60,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 				ShowWindow(hwnd, SW_HIDE);
 			}
 
-			data
-				.tx
+			data.tx
 				.send(ProgressWindow {
 					ui_thread_id: GetCurrentThreadId(),
 				})
@@ -77,14 +78,14 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: UINT, _: WPARAM, l: LPARAM) -
 }
 
 pub struct ProgressWindow {
-	ui_thread_id: DWORD,
+	ui_thread_id: u32,
 }
 
 unsafe impl Send for ProgressWindow {}
 
 impl ProgressWindow {
 	pub fn exit(&self) {
-		use winapi::um::winuser::{PostThreadMessageW, WM_QUIT};
+		use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
 
 		unsafe {
 			PostThreadMessageW(self.ui_thread_id, WM_QUIT, 0, 0);
@@ -94,16 +95,16 @@ impl ProgressWindow {
 
 pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
 	use resources;
-	use winapi::um::libloaderapi::GetModuleHandleW;
-	use winapi::um::winuser::{DialogBoxParamW, MAKEINTRESOURCEW};
+	use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
+	use windows_sys::Win32::UI::WindowsAndMessaging::DialogBoxParamW;
 
 	let data = DialogData { silent, tx };
 
 	unsafe {
 		DialogBoxParamW(
 			GetModuleHandleW(ptr::null_mut()),
-			MAKEINTRESOURCEW(resources::PROGRESS_DIALOG),
-			ptr::null_mut(),
+			resources::PROGRESS_DIALOG as PCWSTR,
+			mem::zeroed(),
 			Some(dlgproc),
 			(&data as *const DialogData) as LPARAM,
 		);
@@ -130,16 +131,16 @@ pub enum MessageBoxResult {
 }
 
 pub fn message_box(text: &str, caption: &str, mbtype: MessageBoxType) -> MessageBoxResult {
-	use winapi::um::winuser::{
-		MessageBoxW, IDABORT, IDCANCEL, IDCONTINUE, IDIGNORE, IDNO, IDOK, IDRETRY, IDTRYAGAIN, IDYES,
-		MB_ICONERROR, MB_RETRYCANCEL, MB_SYSTEMMODAL,
+	use windows_sys::Win32::UI::WindowsAndMessaging::{
+		MessageBoxW, IDABORT, IDCANCEL, IDCONTINUE, IDIGNORE, IDNO, IDOK, IDRETRY, IDTRYAGAIN,
+		IDYES, MB_ICONERROR, MB_RETRYCANCEL, MB_SYSTEMMODAL,
 	};
 
 	let result: i32;
 
 	unsafe {
 		result = MessageBoxW(
-			ptr::null_mut(),
+			mem::zeroed(),
 			to_utf16(text).as_ptr(),
 			to_utf16(caption).as_ptr(),
 			match mbtype {
