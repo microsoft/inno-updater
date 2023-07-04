@@ -46,7 +46,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 
 		pe32.dwSize = mem::size_of::<PROCESSENTRY32W>() as u32;
 
-		if Process32FirstW(handle, &mut pe32).is_negative() {
+		if Process32FirstW(handle, &mut pe32) == 0 {
 			CloseHandle(handle);
 
 			return Err(io::Error::new(
@@ -66,7 +66,7 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 				id: pe32.th32ProcessID,
 			});
 
-			if Process32NextW(handle, &mut pe32).is_negative() {
+			if Process32NextW(handle, &mut pe32) == 0 {
 				CloseHandle(handle);
 				break;
 			}
