@@ -100,8 +100,7 @@ fn delete_existing_version(
 	let root = PathBuf::from(root_path);
 	directories.push_back(root);
 
-	while directories.is_empty() {
-		let dir = directories.pop_front().unwrap();
+	while let Some(dir) = directories.pop_front() {
 		info!(log, "Reading directory: {:?}", dir);
 
 		for entry in fs::read_dir(&dir)? {
@@ -412,9 +411,9 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 
 fn handle_error(log_path: &str) {
 	let msg = format!(
-		"Failed to install Visual Studio Code update.
-		Updates may fail due to anti-virus software and/or runaway processes. Please try restarting your machine before attempting to update again.
-		Please read the log file for more information:
+		"Failed to install Visual Studio Code update.\n\n\
+		Updates may fail due to anti-virus software and/or runaway processes. Please try restarting your machine before attempting to update again.\n\n\
+		Please read the log file for more information:\n\n\
 		{log_path}"
 	);
 

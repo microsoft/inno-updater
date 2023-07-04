@@ -84,7 +84,7 @@ fn kill_process_if(
 	process: &RunningProcess,
 	path: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
-	use windows_sys::Win32::Foundation::{CloseHandle, HANDLE, MAX_PATH};
+	use windows_sys::Win32::Foundation::{CloseHandle, MAX_PATH};
 	use windows_sys::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 	use windows_sys::Win32::System::Threading::{
 		OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
@@ -98,7 +98,7 @@ fn kill_process_if(
 
 	unsafe {
 		// https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
-		let handle: HANDLE = OpenProcess(
+		let handle = OpenProcess(
 			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE,
 			0,
 			process.id,

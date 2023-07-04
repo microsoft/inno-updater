@@ -29,13 +29,17 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	};
 
 	match msg {
-		v if v == WM_INITDIALOG => {
+		WM_INITDIALOG => {
 			let data = &*(l as *const DialogData);
 			if !data.silent {
 				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, WM_USER + 10, 1, 0);
 
-				#[allow(clippy::uninit_assumed_init)]
-				let mut rect = mem::MaybeUninit::<RECT>::uninit().assume_init();
+				let mut rect = RECT {
+					top: 0,
+					left: 0,
+					bottom: 0,
+					right: 0,
+				};
 				GetWindowRect(hwnd, &mut rect);
 
 				let width = rect.right - rect.left;
@@ -65,7 +69,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is updating...").as_ptr());
 			0
 		}
-		v if v == WM_DESTROY => {
+		WM_DESTROY => {
 			ShutdownBlockReasonDestroy(hwnd);
 			0
 		}
