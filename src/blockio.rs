@@ -4,9 +4,11 @@
  *----------------------------------------------------------------------------------------*/
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crc::{crc32, Hasher32};
+use crc::{Crc, CRC_32_ISO_HDLC};
 use std::io::prelude::*;
 use std::{cmp, io};
+
+pub const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 const BLOCK_MAX_SIZE: usize = 4096;
 
@@ -50,11 +52,7 @@ impl<'a> BlockRead<'a> {
 		let buffer = &mut self.buffer[..size];
 		self.reader.read_exact(buffer)?;
 
-		let mut digest = crc32::Digest::new(crc32::IEEE);
-		digest.write(buffer);
-		let actual_crc = digest.sum32();
-
-		if actual_crc != crc {
+		if CRC32.checksum(buffer) != crc {
 			return Err(io::Error::new(
 				io::ErrorKind::InvalidData,
 				"Block header crc32 check failed",
@@ -117,10 +115,7 @@ impl<'a> BlockWrite<'a> {
 		self.writer.write_u32::<LittleEndian>(!(self.pos as u32))?;
 
 		let slice = &self.buffer[..self.pos];
-		let mut digest = crc32::Digest::new(crc32::IEEE);
-		digest.write(slice);
-
-		let crc = digest.sum32();
+		let crc = CRC32.checksum(slice);
 		self.writer.write_u32::<LittleEndian>(crc)?;
 		self.writer.write_all(slice)?;
 

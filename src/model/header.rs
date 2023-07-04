@@ -4,11 +4,13 @@
  *----------------------------------------------------------------------------------------*/
 
 use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
-use crc::{crc32, Hasher32};
+use crc::{Crc, CRC_32_ISO_HDLC};
 use std::io::prelude::*;
 use std::string::String;
 use std::{error, fmt};
 use strings;
+
+pub const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 
 #[derive(Debug, Clone)]
 pub struct HeaderParseError<'a>(&'a str);
@@ -119,11 +121,7 @@ impl Header {
 			.read_u32::<LittleEndian>()
 			.map_err(|_| HeaderParseError("Failed to parse header crc"))?;
 
-		let mut digest = crc32::Digest::new(crc32::IEEE);
-		digest.write(&buf[..HEADER_SIZE - 4]);
-		let actual_crc = digest.sum32();
-
-		if actual_crc != crc {
+		if CRC32.checksum(&buf[..HEADER_SIZE - 4]) != crc {
 			return Err(HeaderParseError("CRC32 check failed"));
 		}
 
@@ -180,9 +178,7 @@ impl Header {
 				.map_err(|_| HeaderWriteError("Failed to write header reserved to buffer"))?;
 		}
 
-		let mut digest = crc32::Digest::new(crc32::IEEE);
-		digest.write(&buf[..HEADER_SIZE - 4]);
-		let crc = digest.sum32();
+		let crc = CRC32.checksum(&buf[..HEADER_SIZE - 4]);
 
 		{
 			let mut buf_writer = &mut buf[HEADER_SIZE - 4..];
