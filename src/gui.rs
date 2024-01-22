@@ -14,9 +14,14 @@ extern "system" {
 	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
 
+pub(crate) struct DialogDictionary {
+	pub(crate) updating: String,
+}
+
 struct DialogData {
 	silent: bool,
 	tx: Sender<ProgressWindow>,
+	dictionary: Option<DialogDictionary>,
 }
 
 unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) -> isize {
@@ -24,15 +29,20 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	use windows_sys::Win32::Foundation::RECT;
 	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
-		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetWindowPos, ShowWindow,
-		HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
+		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW, SetWindowPos,
+		ShowWindow, HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
-
 	match msg {
 		WM_INITDIALOG => {
 			let data = &*(l as *const DialogData);
 			if !data.silent {
 				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, WM_USER + 10, 1, 0);
+
+				// change the text of the dialog label
+				if let Some(dictionary) = &data.dictionary {
+					let updating_text: Vec<u16> = to_utf16(&dictionary.updating);
+					SetDlgItemTextW(hwnd, -1, updating_text.as_ptr());
+				}
 
 				let mut rect = RECT {
 					top: 0,
@@ -93,12 +103,20 @@ impl ProgressWindow {
 	}
 }
 
-pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>) {
+pub fn run_progress_window(
+	silent: bool,
+	tx: Sender<ProgressWindow>,
+	dictionary: Option<DialogDictionary>,
+) {
 	use resources;
 	use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 	use windows_sys::Win32::UI::WindowsAndMessaging::DialogBoxParamW;
 
-	let data = DialogData { silent, tx };
+	let data = DialogData {
+		silent,
+		tx,
+		dictionary,
+	};
 
 	unsafe {
 		DialogBoxParamW(

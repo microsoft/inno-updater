@@ -22,6 +22,7 @@ mod resources;
 mod strings;
 mod util;
 
+use gui::DialogDictionary;
 use handle::FileHandle;
 use model::{FileRec, Header};
 use slog::Drain;
@@ -338,6 +339,7 @@ fn update(
 	code_path: &PathBuf,
 	update_folder_name: &str,
 	silent: bool,
+	dictionary: Option<DialogDictionary>,
 ) -> Result<(), Box<dyn error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
@@ -347,7 +349,7 @@ fn update(
 	let (tx, rx) = mpsc::channel();
 
 	thread::spawn(move || {
-		gui::run_progress_window(silent, tx);
+		gui::run_progress_window(silent, tx, dictionary);
 	});
 
 	let window = rx
@@ -406,7 +408,13 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 		.into());
 	}
 
-	update(log, &code_path, "_", silent == "true")
+	let mut dictionary: Option<DialogDictionary> = Option::None;
+	if args.len() == 4 {
+		let updating = args[3].clone();
+		dictionary = Some(DialogDictionary { updating });
+	}
+
+	update(log, &code_path, "_", silent == "true", dictionary)
 }
 
 fn handle_error(log_path: &str) {
@@ -491,22 +499,34 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
-	} else if args.len() == 2 && args[1] == "--gui" {
+	} else if args.len() >= 2 && args[1] == "--gui" {
 		let (tx, rx) = mpsc::channel();
 
+		let mut dictionary: Option<DialogDictionary> = Option::None;
+		if args.len() == 3 {
+			let updating = args[2].clone();
+			dictionary = Some(DialogDictionary { updating });
+		}
+
 		thread::spawn(move || {
-			gui::run_progress_window(false, tx);
+			gui::run_progress_window(false, tx, dictionary);
 		});
 
 		let window = rx.recv().unwrap();
 
 		thread::sleep(std::time::Duration::from_secs(5));
 		window.exit();
-	} else if args.len() == 2 && args[1] == "--retry-simulation" {
+	} else if args.len() >= 2 && args[1] == "--retry-simulation" {
 		let (tx, rx) = mpsc::channel();
 
+		let mut dictionary: Option<DialogDictionary> = Option::None;
+		if args.len() == 3 {
+			let updating = args[2].clone();
+			dictionary = Some(DialogDictionary { updating });
+		}
+
 		thread::spawn(move || {
-			gui::run_progress_window(false, tx);
+			gui::run_progress_window(false, tx, dictionary);
 		});
 
 		let window = rx.recv().unwrap();
