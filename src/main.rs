@@ -381,7 +381,7 @@ impl error::Error for ArgumentError {
 }
 
 fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "Starting: {}, {}", args[1], args[2]);
+	info!(log, "Starting: {}, {}, {}", args[1], args[2], args[3]);
 
 	let code_path = PathBuf::from(&args[1]);
 
