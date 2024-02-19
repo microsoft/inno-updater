@@ -338,6 +338,7 @@ fn update(
 	code_path: &PathBuf,
 	update_folder_name: &str,
 	silent: bool,
+	label: String,
 ) -> Result<(), Box<dyn error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
@@ -347,7 +348,7 @@ fn update(
 	let (tx, rx) = mpsc::channel();
 
 	thread::spawn(move || {
-		gui::run_progress_window(silent, tx);
+		gui::run_progress_window(silent, tx, label);
 	});
 
 	let window = rx
@@ -380,7 +381,7 @@ impl error::Error for ArgumentError {
 }
 
 fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "Starting: {}, {}", args[1], args[2]);
+	info!(log, "Starting: {}, {}, {}", args[1], args[2], args[3]);
 
 	let code_path = PathBuf::from(&args[1]);
 
@@ -406,7 +407,9 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 		.into());
 	}
 
-	update(log, &code_path, "_", silent == "true")
+	let label = args[3].clone();
+
+	update(log, &code_path, "_", silent == "true", label)
 }
 
 fn handle_error(log_path: &str) {
@@ -491,22 +494,24 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
-	} else if args.len() == 2 && args[1] == "--gui" {
+	} else if args.len() == 3 && args[1] == "--gui" {
 		let (tx, rx) = mpsc::channel();
+		let label = args[2].clone();
 
 		thread::spawn(move || {
-			gui::run_progress_window(false, tx);
+			gui::run_progress_window(false, tx, label);
 		});
 
 		let window = rx.recv().unwrap();
 
 		thread::sleep(std::time::Duration::from_secs(5));
 		window.exit();
-	} else if args.len() == 2 && args[1] == "--retry-simulation" {
+	} else if args.len() == 3 && args[1] == "--retry-simulation" {
 		let (tx, rx) = mpsc::channel();
+		let label = args[2].clone();
 
 		thread::spawn(move || {
-			gui::run_progress_window(false, tx);
+			gui::run_progress_window(false, tx, label);
 		});
 
 		let window = rx.recv().unwrap();
@@ -533,7 +538,7 @@ fn main() {
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
 
-		if args.len() < 3 {
+		if args.len() < 4 {
 			eprintln!("Inno Update v{}", VERSION);
 			eprintln!("Error: Bad usage");
 			std::process::exit(1);
