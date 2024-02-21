@@ -86,8 +86,6 @@ pub struct ProgressWindow {
 	ui_thread_id: u32,
 }
 
-unsafe impl Send for ProgressWindow {}
-
 impl ProgressWindow {
 	pub fn exit(&self) {
 		use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
