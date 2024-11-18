@@ -19,7 +19,7 @@ jobs:
       - run: npm install
         working-directory: tools/legal
       - run: node tools/legal Cargo.lock
-      - uses: actions/upload-artifact@v2
+      - uses: actions/upload-artifact@v4
         with:
           name: inno-updater
           path: |
