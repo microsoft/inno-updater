@@ -131,8 +131,8 @@ fn delete_existing_version(
 					continue;
 				}
 
-				// don't delete the extras folder
-				if (entry_name == "extras") {
+				// don't delete the bootstrap folder
+				if (entry_name == "bootstrap") {
 					continue;
 				}
 			}
