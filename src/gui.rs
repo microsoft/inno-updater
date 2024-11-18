@@ -25,8 +25,8 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	use windows_sys::Win32::Foundation::RECT;
 	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
-		GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW, SetWindowPos,
-		ShowWindow, HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
+		EndDialog, GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW,
+		SetWindowPos, HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
 
 	match msg {
@@ -62,7 +62,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 					0,
 				);
 			} else {
-				ShowWindow(hwnd, SW_HIDE);
+				EndDialog(hwnd, 0);
 			}
 
 			data.tx
