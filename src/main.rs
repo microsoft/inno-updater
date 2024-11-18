@@ -130,6 +130,11 @@ fn delete_existing_version(
 				if entry_name == "appx" {
 					continue;
 				}
+
+				// don't delete the extras folder
+				if (entry_name == "extras") {
+					continue;
+				}
 			}
 
 			let entry_file_type = entry.file_type()?;
