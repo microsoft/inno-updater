@@ -499,7 +499,7 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
-	} else if args.len() == 3 && args[1] == "--gui" {
+	} else if args.len() >= 3 && args[1] == "--gui" {
 		let (tx, rx) = mpsc::channel();
 		let label = args[2].clone();
 
@@ -508,8 +508,9 @@ fn main() {
 		});
 
 		let window = rx.recv().unwrap();
+		let duration = args.get(3).and_then(|v| v.parse().ok()).unwrap_or(5); // Default to 5 seconds if parsing fails
 
-		thread::sleep(std::time::Duration::from_secs(5));
+		thread::sleep(std::time::Duration::from_secs(duration));
 		window.exit();
 	} else if args.len() == 3 && args[1] == "--retry-simulation" {
 		let (tx, rx) = mpsc::channel();
