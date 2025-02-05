@@ -74,7 +74,7 @@ fn write_file(
 	let mut header = header.clone();
 
 	// what's the full file size?
-	let end_offset = output_file.seek(io::SeekFrom::Current(0))?;
+	let end_offset = output_file.stream_position()?;
 	header.end_offset = end_offset as u32;
 
 	// go back to beginning
@@ -132,7 +132,7 @@ fn delete_existing_version(
 				}
 
 				// don't delete the bootstrap folder
-				if (entry_name == "bootstrap") {
+				if entry_name == "bootstrap" {
 					continue;
 				}
 			}
@@ -291,7 +291,7 @@ fn patch_uninstdat(
 	})?;
 
 	let mut update_path = PathBuf::from(root_path);
-	update_path.push(&update_folder_name);
+	update_path.push(update_folder_name);
 
 	let recs: Result<Vec<FileRec>, _> = recs
 		.iter()

@@ -7,17 +7,15 @@ use gui;
 use std::{error, ptr, thread, time};
 use strings::from_utf16;
 
-/**
- * Quadratic backoff retry mechanism.
- *
- * Use `max_attempts` to control how long it should retry for:
- * 	- 11 (default): 19s
- *  - 16: ~1 minute
- *  - 20: ~2 minutes
- *  - 23: ~3 minutes
- *  - 25: ~4 minutes
- *  - 27: ~5 minutes
- */
+/// Quadratic backoff retry mechanism.
+///
+/// Use `max_attempts` to control how long it should retry for:
+///  - 11 (default): 19s
+///  - 16: ~1 minute
+///  - 20: ~2 minutes
+///  - 23: ~3 minutes
+///  - 25: ~4 minutes
+///  - 27: ~5 minutes
 pub fn retry<F, R, T>(task: &str, closure: F, max_attempts: T) -> Result<R, Box<dyn error::Error>>
 where
 	F: Fn(u32) -> Result<R, Box<dyn error::Error>>,
