@@ -9,6 +9,7 @@ use std::os::windows::ffi::OsStrExt;
 use std::{io, string};
 
 #[derive(Debug)]
+#[allow(dead_code)] // allow for debugging purposes
 pub enum ReadUtf8StringError {
 	IOError(io::Error),
 	UTF8Error(string::FromUtf8Error),

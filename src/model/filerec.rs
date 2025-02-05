@@ -68,7 +68,7 @@ impl fmt::Debug for FileRec {
 			formatter,
 			"FileRec 0x{:x} 0x{:x} {} bytes",
 			self.typ as u32,
-			self.extra_data as u32,
+			{ self.extra_data },
 			self.data.len(),
 		)
 	}
@@ -95,10 +95,10 @@ impl<'a> error::Error for StringDecodeError<'a> {
 
 fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>> {
 	let mut result: Vec<String> = Vec::with_capacity(10);
-	let mut slice = data.clone();
+	let mut slice = data;
 
 	loop {
-		let reader: &mut dyn Read = &mut slice.clone();
+		let reader: &mut dyn Read = &mut slice;
 		let byte_result = reader
 			.read_u8()
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
