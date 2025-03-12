@@ -27,3 +27,16 @@ jobs:
             target/*/release/inno_updater.pdb
             Cargo.lock
             Cargo.toml
+      - name: Create GitHub Release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            target/*/release/inno_updater.exe
+            target/*/release/inno_updater.pdb
+            Cargo.lock
+            Cargo.toml
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
