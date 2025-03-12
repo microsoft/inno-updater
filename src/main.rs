@@ -539,6 +539,8 @@ fn main() {
 		window.exit();
 	} else if args.len() == 3 && args[1] == "--error" {
 		handle_error(&log_path);
+	} else if args.len() == 2 && args[1] == "--crash" {
+		panic!("Simulated crash");
 	} else if args.len() == 2 && (args[1] == "--version" || args[1] == "-v") {
 		eprintln!("Inno Update v{}", VERSION);
 	} else {

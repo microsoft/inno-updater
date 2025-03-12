@@ -24,5 +24,6 @@ jobs:
           name: inno-updater
           path: |
             target/*/release/inno_updater.exe
+            target/*/release/inno_updater.pdb
             Cargo.lock
             Cargo.toml
