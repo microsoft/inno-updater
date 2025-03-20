@@ -1,0 +1,54 @@
+// 1 == CREATEPROCESS_MANIFEST_RESOURCE_ID 
+// 24 == RT_MANIFEST
+1 24 "main.manifest"
+
+101 ICON "code.ico"
+
+1001 DIALOGEX 0, 0, 187, 55
+// 72 == DS_SHELLFONT
+// 80 == DS_MODALFRAME
+// 512 == DS_SETFOREGROUND
+// 4 == DS_3DLOOK
+// 2147483648 == WS_POPUP
+// 12582912 == WS_CAPTION
+STYLE 72 | 80 | 512 | 4 | 2147483648 | 12582912
+// 8 == WS_EX_TOPMOST
+EXSTYLE 8
+CAPTION "Visual Studio Code"
+FONT 8, "MS Shell Dlg", 400, 0, 0x0
+BEGIN
+    LTEXT           "Updating Visual Studio Code...",-1,11,10,165,8
+    // 8 == PBS_MARQUEE
+    // 8388608 == WS_BORDER
+    CONTROL         "",10001,"msctls_progress32",8 | 8388608,11,27,165,14
+END
+
+// Version Information
+1 VERSIONINFO
+FILEVERSION     {{VERSION_MAJOR}},{{VERSION_MINOR}},{{VERSION_PATCH}},0
+PRODUCTVERSION  {{VERSION_MAJOR}},{{VERSION_MINOR}},{{VERSION_PATCH}},0
+FILEFLAGSMASK   0x3fL
+FILEFLAGS       0
+FILEOS          0x40004L
+FILETYPE        0x1L
+FILESUBTYPE     0x0L
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904E4"
+        BEGIN
+            VALUE "CompanyName",      "Microsoft Corporation"
+            VALUE "FileDescription",  "VSCode Inno Updater"
+            VALUE "FileVersion",      "{{VERSION_STRING}}"
+            VALUE "InternalName",     "inno_updater"
+            VALUE "LegalCopyright",   "Copyright (C) Microsoft"
+            VALUE "OriginalFilename", "inno_updater.exe"
+            VALUE "ProductName",      "Visual Studio Code"
+            VALUE "ProductVersion",   "{{VERSION_STRING}}"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1252
+    END
+END
