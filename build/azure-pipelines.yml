@@ -18,6 +18,7 @@ extends:
   parameters:
     binaryName: inno_updater
     signing: true
+    apiScanTarget: i686-pc-windows-msvc
     apiScanSoftwareVersion: 2024
     tsa:
       enabled: true
