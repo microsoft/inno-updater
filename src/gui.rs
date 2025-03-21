@@ -11,6 +11,7 @@ use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: PCWSTR) -> BOOL;
+	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
 
 struct DialogData {
@@ -26,13 +27,19 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
 		EndDialog, GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW,
 		SetWindowLongW, SetWindowPos, DWL_MSGRESULT, HWND_TOPMOST, WM_INITDIALOG,
-		WM_QUERYENDSESSION, WM_USER,
+		WM_QUERYENDSESSION, WM_USER, ENDSESSION_CLOSEAPP, ENDSESSION_CRITICAL
 	};
 
 	match msg {
 		// https://stackoverflow.com/a/10884478
 		WM_QUERYENDSESSION => {
-			SetWindowLongW(hwnd, DWL_MSGRESULT as i32, 0);
+			if l == ENDSESSION_CLOSEAPP as isize || l == ENDSESSION_CRITICAL as isize {
+				ShutdownBlockReasonDestroy(hwnd);
+				SetWindowLongW(hwnd, DWL_MSGRESULT as i32, 1);
+			} else {
+				SetWindowLongW(hwnd, DWL_MSGRESULT as i32, 0);
+			}
+			
 			1
 		}
 		WM_INITDIALOG => {
@@ -73,6 +80,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 			data.tx
 				.send(ProgressWindow {
 					ui_thread_id: GetCurrentThreadId(),
+					hwnd,
 				})
 				.unwrap();
 
@@ -85,6 +93,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 
 pub struct ProgressWindow {
 	ui_thread_id: u32,
+	hwnd: HWND,
 }
 
 impl ProgressWindow {
@@ -92,6 +101,7 @@ impl ProgressWindow {
 		use windows_sys::Win32::UI::WindowsAndMessaging::{PostThreadMessageW, WM_QUIT};
 
 		unsafe {
+			ShutdownBlockReasonDestroy(self.hwnd);
 			PostThreadMessageW(self.ui_thread_id, WM_QUIT, 0, 0);
 		}
 	}
