@@ -26,7 +26,7 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
 		EndDialog, GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW,
-		SetWindowPos, HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
+		SetWindowPos, HWND_TOPMOST, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
 
 	match msg {
