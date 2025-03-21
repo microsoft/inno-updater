@@ -44,7 +44,7 @@ BEGIN
             VALUE "LegalCopyright",   "Copyright (C) Microsoft"
             VALUE "OriginalFilename", "inno_updater.exe"
             VALUE "ProductName",      "Visual Studio Code"
-            VALUE "ProductVersion",   "{{VERSION_STRING}}"
+            VALUE "ProductVersion",   "{{COMMIT}}"
         END
     END
     BLOCK "VarFileInfo"

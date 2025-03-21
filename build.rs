@@ -18,6 +18,20 @@ fn main() {
     let minor = version_parts[1];
     let patch = version_parts[2];
     
+    // Get the current git commit hash
+    let commit_hash = Command::new("git")
+        .args(&["rev-parse", "HEAD"])
+        .output()
+        .map(|output| {
+            let hash = String::from_utf8_lossy(&output.stdout).trim().to_string();
+            if hash.len() >= 10 {
+                hash[..10].to_string()
+            } else {
+                hash
+            }
+        })
+        .unwrap_or_else(|_| "unknown".to_string());
+    //
     // Read the resource template
     let mut template_content = String::new();
     fs::File::open("resources/resources.rc.template")
@@ -30,7 +44,8 @@ fn main() {
         .replace("{{VERSION_MAJOR}}", major)
         .replace("{{VERSION_MINOR}}", minor)
         .replace("{{VERSION_PATCH}}", patch)
-        .replace("{{VERSION_STRING}}", &version);
+        .replace("{{VERSION_STRING}}", &version)
+        .replace("{{COMMIT}}", &commit_hash);
     
     // Write the updated content to resources.rc
     fs::write("resources/resources.rc", updated_content)
@@ -61,7 +76,8 @@ fn main() {
         resources.file_stem().unwrap().to_str().unwrap()
     );
     
-    // Make sure we rerun the build script when resources or cargo.toml changes
+    // Make sure we rerun the build script when resources, cargo.toml, or git head changes
     println!("cargo:rerun-if-changed=resources/resources.rc.template");
     println!("cargo:rerun-if-changed=Cargo.toml");
+    println!("cargo:rerun-if-changed=.git/HEAD");
 }
