@@ -11,6 +11,7 @@ use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
 
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: PCWSTR) -> BOOL;
+	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
 
 struct DialogData {
@@ -25,16 +26,10 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
 		EndDialog, GetDesktopWindow, GetWindowRect, SendDlgItemMessageW, SetDlgItemTextW,
-		SetWindowLongW, SetWindowPos, DWL_MSGRESULT, HWND_TOPMOST, WM_INITDIALOG,
-		WM_QUERYENDSESSION, WM_USER,
+		SetWindowPos, HWND_TOPMOST, SW_HIDE, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
 
 	match msg {
-		// https://stackoverflow.com/a/10884478
-		WM_QUERYENDSESSION => {
-			SetWindowLongW(hwnd, DWL_MSGRESULT as i32, 0);
-			1
-		}
 		WM_INITDIALOG => {
 			let data = &*(l as *const DialogData);
 			if !data.silent {
@@ -76,7 +71,11 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 				})
 				.unwrap();
 
-			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is applying update.").as_ptr());
+			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is updating...").as_ptr());
+			0
+		}
+		WM_DESTROY => {
+			ShutdownBlockReasonDestroy(hwnd);
 			0
 		}
 		_ => 0,
