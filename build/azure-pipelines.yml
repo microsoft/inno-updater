@@ -20,7 +20,7 @@ extends:
   template: azure-pipelines/rust-package/pipeline.yml@templates
   parameters:
     binaryName: inno_updater
-    # signing: true
+    signing: false
     apiScanTarget: i686-pc-windows-msvc
     apiScanSoftwareVersion: 2024
     tsa:
