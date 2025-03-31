@@ -26,6 +26,9 @@ features = [
     "Win32_System_Diagnostics_ToolHelp"
 ]
 
+[target.'cfg(windows)']
+rustflags = ["-Ccontrol-flow-guard"]
+
 [profile.release]
 lto = true
 panic = 'abort'
