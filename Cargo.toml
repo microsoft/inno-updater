@@ -26,8 +26,11 @@ features = [
     "Win32_System_Diagnostics_ToolHelp"
 ]
 
-[target.'cfg(windows)']
+[target.'cfg(target_os = "windows")']
 rustflags = ["-Ccontrol-flow-guard"]
+
+[target.'cfg(all(target_os = "windows", any(target_arch = "i686", target_arch = "x86_64", target_arch = "x86")))']
+rustflags = ["-Clink-args=/DYNAMICBASE /CETCOMPAT"]
 
 [profile.release]
 lto = true
