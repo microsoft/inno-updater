@@ -319,4 +319,8 @@ impl FileRec {
 			data: encode_strings(&rebased_paths)?,
 		})
 	}
+
+	pub fn get_paths(&self) -> Result<Vec<String>, StringDecodeError> {
+		decode_strings(&self.data)
+	}
 }

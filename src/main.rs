@@ -474,10 +474,20 @@ fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 	for rec in recs {
 		let count = map.entry(rec.typ as u16).or_insert(0);
 		*count += 1;
+
+		match rec.typ {
+			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
+				let paths = rec.get_paths().unwrap();
+				for path in paths {
+					println!("  Path: {}", path);
+				}
+			}
+			_ => {}
+		}
 	}
 
 	for (k, c) in &map {
-		println!("Records 0x{:x} {}", k, c);
+		println!("Record type 0x{:x}, count {}", k, c);
 	}
 
 	Ok(())
