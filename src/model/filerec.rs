@@ -9,7 +9,7 @@ use std::path::Path;
 use std::string::String;
 use std::{error, fmt};
 
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, PartialEq, Debug)]
 pub enum UninstallRecTyp {
 	UserDefined = 0x01,
 	StartInstall = 0x10,
@@ -322,5 +322,109 @@ impl FileRec {
 
 	pub fn get_paths(&self) -> Result<Vec<String>, StringDecodeError> {
 		decode_strings(&self.data)
+	}
+}
+
+#[cfg(test)]
+mod tests {
+	use crate::blockio;
+	use crate::model::Header;
+
+	use super::*;
+	use std::fs::File;
+	use std::io::BufReader;
+	use std::path::PathBuf;
+
+	#[test]
+	fn test_decode_encode_strings() {
+		let strings = vec![
+			String::from("Hello"),
+			String::from("World"),
+			String::from("Test"),
+		];
+
+		let encoded = encode_strings(&strings).unwrap();
+		let decoded = decode_strings(&encoded).unwrap();
+
+		assert_eq!(strings, decoded);
+	}
+
+	#[test]
+	fn test_file_rec_serialization() {
+		let original = FileRec {
+			typ: UninstallRecTyp::DeleteFile,
+			extra_data: 42,
+			data: vec![
+				0xfe, 0xfc, 0xff, 0xff, 0x48, 0x00, 0x65, 0x00, 0x6c, 0x00, 0x6c, 0x00, 0x6f, 0x00,
+				0xff,
+			],
+		};
+
+		let mut buffer = Vec::new();
+		original.to_writer(&mut buffer).unwrap();
+
+		let mut reader = buffer.as_slice();
+		let parsed = FileRec::from_reader(&mut reader).unwrap();
+
+		assert_eq!(original.typ, parsed.typ);
+		assert_eq!(original.extra_data, parsed.extra_data);
+		assert_eq!(original.data, parsed.data);
+	}
+
+	#[test]
+	fn test_rebase() {
+		let data = encode_strings(&[String::from("C:\\Temp\\test.txt")]).unwrap();
+		let record = FileRec {
+			typ: UninstallRecTyp::DeleteFile,
+			extra_data: 0,
+			data,
+		};
+
+		let rebased = record.rebase(Path::new("C:\\Temp\\")).unwrap();
+		let paths = rebased.get_paths().unwrap();
+
+		assert_eq!(paths[0], "C:\\test.txt");
+	}
+
+	#[test]
+	fn test_parse_unin000_dat() {
+		// file in in relative to this file: fixtures/unins000.dat
+		let mut path = PathBuf::from(file!());
+		path.pop();
+		path.pop();
+		path.push("fixtures/unins000.dat");
+
+		let file = File::open(path).expect("Failed to open unin000.dat file");
+		let mut reader = BufReader::new(file);
+
+		let header = Header::from_reader(&mut reader).expect("Failed to parse header");
+		let mut reader = blockio::BlockRead::new(&mut reader);
+		let mut records = Vec::with_capacity(header.num_recs);
+
+		for _ in 0..header.num_recs {
+			records.push(FileRec::from_reader(&mut reader).expect("Failed to parse file rec"));
+		}
+
+		// Basic validation
+		assert!(!records.is_empty(), "Should parse at least one record");
+
+		// Verify we have the expected record types
+		let has_start = records
+			.iter()
+			.any(|r| r.typ == UninstallRecTyp::StartInstall);
+		let has_end = records.iter().any(|r| r.typ == UninstallRecTyp::EndInstall);
+
+		assert!(has_start, "Should contain a StartInstall record");
+		assert!(has_end, "Should contain an EndInstall record");
+
+		if let Some(delete_rec) = records
+			.iter()
+			.find(|r| r.typ == UninstallRecTyp::DeleteFile)
+		{
+			let paths = delete_rec.get_paths().expect("Failed to decode paths");
+			assert!(!paths.is_empty(), "DeleteFile record should have paths");
+		} else {
+			panic!("No DeleteFile record found");
+		}
 	}
 }
