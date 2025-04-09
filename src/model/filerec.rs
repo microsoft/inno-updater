@@ -95,17 +95,16 @@ impl<'a> error::Error for StringDecodeError<'a> {
 
 fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>> {
 	let mut result: Vec<String> = Vec::with_capacity(10);
-	let mut slice = data.clone();
+	let reader = &mut data.as_ref();
 
 	loop {
-		let reader: &mut dyn Read = &mut slice.clone();
 		let byte_result = reader
 			.read_u8()
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
 
 		match byte_result {
-			0x00..=0xfc => panic!("What 0x{:x}", byte_result),
-			0xfd => panic!("What 0x{:x}", byte_result),
+			0x00..=0xfc => return Err(StringDecodeError("Invalid file rec string header")),
+			0xfd => return Err(StringDecodeError("Invalid file rec string header")),
 			0xfe => {
 				let size = reader
 					.read_i32::<LittleEndian>()
@@ -116,18 +115,20 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 				if size > 0 {
 					assert_eq!(size % 2, 0);
 
-					let mut u16data: Vec<u16> = vec![0; size / 2];
-					LittleEndian::read_u16_into(&slice[5..5 + size], &mut u16data);
+					let mut u16data = vec![0; size / 2];
+					for i in 0..u16data.len() {
+						u16data[i] = reader.read_u16::<LittleEndian>().map_err(|_| {
+							StringDecodeError("Failed to parse file rec data string")
+						})?;
+					}
 
 					let string = String::from_utf16(&u16data)
 						.map_err(|_| StringDecodeError("Failed to parse file rec data string"))?;
 					result.push(string);
 				}
-
-				slice = &slice[5 + size..];
 			}
 			0xff => {
-				if slice.len() != 1 {
+				if !reader.is_empty() {
 					return Err(StringDecodeError("Invalid file rec string header length"));
 				}
 				return Ok(result);
