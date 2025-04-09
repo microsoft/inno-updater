@@ -95,10 +95,10 @@ impl<'a> error::Error for StringDecodeError<'a> {
 
 fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>> {
 	let mut result: Vec<String> = Vec::with_capacity(10);
-	let mut slice = data;
+	let mut slice = data.clone();
 
 	loop {
-		let reader: &mut dyn Read = &mut slice;
+		let reader: &mut dyn Read = &mut slice.clone();
 		let byte_result = reader
 			.read_u8()
 			.map_err(|_| StringDecodeError("Failed to parse file rec string header"))?;
