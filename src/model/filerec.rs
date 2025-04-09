@@ -453,4 +453,61 @@ mod tests {
 			panic!("No DeleteFile record found");
 		}
 	}
+
+	#[test]
+	fn test_decode_strings() {
+		// Empty list (just the end marker 0xFF)
+		let empty_data = [0xFF];
+		let result = decode_strings(&empty_data).unwrap();
+		assert_eq!(result.len(), 0);
+
+		// One string "Hello"
+		// -10 in little-endian i32 = [0xF6, 0xFF, 0xFF, 0xFF]
+		let one_string = [
+			0xFE, 0xF6, 0xFF, 0xFF, 0xFF, // header + size (-10)
+			b'H', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0,    // "Hello" in UTF-16LE
+			0xFF, // end marker
+		];
+		let result = decode_strings(&one_string).unwrap();
+		assert_eq!(result.len(), 1);
+		assert_eq!(result[0], "Hello");
+
+		// Multiple strings ("Hello", "Hi")
+		let multi_string = [
+			0xFE, 0xF6, 0xFF, 0xFF, 0xFF, // header + size (-10)
+			b'H', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0, // "Hello" in UTF-16LE
+			0xFE, 0xFC, 0xFF, 0xFF, 0xFF, // header + size (-4)
+			b'H', 0, b'i', 0,    // "Hi" in UTF-16LE
+			0xFF, // end marker
+		];
+		let result = decode_strings(&multi_string).unwrap();
+		assert_eq!(result.len(), 2);
+		assert_eq!(result[0], "Hello");
+		assert_eq!(result[1], "Hi");
+
+		// Empty string (size = 0, should not be added)
+		let zero_length = [
+			0xFE, 0x00, 0x00, 0x00, 0x00, // header + size (0)
+			0xFF, // end marker
+		];
+		let result = decode_strings(&zero_length).unwrap();
+		assert_eq!(result.len(), 0);
+
+		// Error - Invalid end marker (extra data)
+		let invalid_end = [
+			0xFE, 0xF6, 0xFF, 0xFF, 0xFF, // header + size (-10)
+			b'H', 0, b'e', 0, b'l', 0, b'l', 0, b'o', 0, // "Hello" in UTF-16LE
+			0xFF, 0x00, // invalid end - extra byte
+		];
+		let result = decode_strings(&invalid_end);
+		assert!(result.is_err());
+	}
+
+	#[test]
+	#[should_panic(expected = "What 0xfc")]
+	fn test_decode_strings_panic_on_invalid_header() {
+		// This should panic because the header is invalid
+		let invalid_header = [0xFC];
+		let _ = decode_strings(&invalid_header);
+	}
 }
