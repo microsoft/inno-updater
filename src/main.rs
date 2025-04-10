@@ -304,9 +304,8 @@ fn patch_uninstdat(
 		})
 		.collect::<Result<Vec<_>, _>>()?;
 
-	let before = recs.len();
-
 	// Remove duplicate records of type DeleteDirOrFiles and DeleteFile that only have one path
+	let before = recs.len();
 	let mut set: HashSet<String> = HashSet::new();
 	let recs = recs
 		.into_iter()
@@ -336,6 +335,7 @@ fn patch_uninstdat(
 		})
 		.collect::<Vec<FileRec>>();
 
+	let header = header.clone_with_num_recs(recs.len());
 	info!(log, "Removed {} duplicate records", before - recs.len());
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
