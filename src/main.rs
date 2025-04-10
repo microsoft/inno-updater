@@ -25,6 +25,7 @@ mod util;
 use handle::FileHandle;
 use model::{FileRec, Header};
 use slog::Drain;
+use std::collections::HashSet;
 use std::collections::LinkedList;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
@@ -293,7 +294,7 @@ fn patch_uninstdat(
 	let mut update_path = PathBuf::from(root_path);
 	update_path.push(update_folder_name);
 
-	let recs: Result<Vec<FileRec>, _> = recs
+	let recs: Vec<FileRec> = recs
 		.iter()
 		.map(|rec| match rec.typ {
 			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
@@ -301,10 +302,44 @@ fn patch_uninstdat(
 			}
 			_ => Ok(rec.clone()),
 		})
-		.collect();
+		.collect::<Result<Vec<_>, _>>()?;
+
+	let before = recs.len();
+
+	// Remove duplicate records of type DeleteDirOrFiles and DeleteFile that only have one path
+	let mut set: HashSet<String> = HashSet::new();
+	let recs = recs
+		.into_iter()
+		.filter(|rec| {
+			if rec.typ != model::UninstallRecTyp::DeleteDirOrFiles
+				&& rec.typ != model::UninstallRecTyp::DeleteFile
+			{
+				return true;
+			}
+
+			match rec.get_paths() {
+				Ok(paths) => {
+					if paths.len() != 1 {
+						return true;
+					}
+
+					let path = &paths[0];
+					if set.contains(path) {
+						return false;
+					}
+
+					set.insert(path.clone());
+					true
+				}
+				Err(_) => false, // Skip records with errors in paths
+			}
+		})
+		.collect::<Vec<FileRec>>();
+
+	info!(log, "Removed {} duplicate records", before - recs.len());
 
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
-	write_file(uninstdat_path, &header, recs?)?;
+	write_file(uninstdat_path, &header, recs)?;
 
 	Ok(())
 }
