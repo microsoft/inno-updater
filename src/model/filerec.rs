@@ -504,10 +504,10 @@ mod tests {
 	}
 
 	#[test]
-	#[should_panic(expected = "What 0xfc")]
 	fn test_decode_strings_panic_on_invalid_header() {
 		// This should panic because the header is invalid
 		let invalid_header = [0xFC];
-		let _ = decode_strings(&invalid_header);
+		let result = decode_strings(&invalid_header);
+		assert!(result.is_err(), "Expected an error for invalid header");
 	}
 }
