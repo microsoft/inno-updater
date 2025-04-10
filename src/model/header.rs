@@ -66,14 +66,13 @@ pub struct Header {
 	pub num_recs: usize,
 	pub end_offset: u32,
 	flags: u32,
-	crc: u32,
 }
 
 impl fmt::Debug for Header {
 	fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
 		write!(
 			formatter,
-			"Header, id: {}, app id: {}, app name: {}, version: {}, num recs: {}, end offset: {}, flags: 0x{:x}, crc: 0x{:x}",
+			"Header, id: {}, app id: {}, app name: {}, version: {}, num recs: {}, end offset: {}, flags: 0x{:x}",
 			self.id,
 			self.app_id,
 			self.app_name,
@@ -81,7 +80,6 @@ impl fmt::Debug for Header {
 			self.num_recs,
 			self.end_offset,
 			self.flags,
-			self.crc,
 		)
 	}
 }
@@ -103,9 +101,9 @@ impl Header {
 		let version = read
 			.read_i32::<LittleEndian>()
 			.map_err(|_| HeaderParseError("Failed to parse header version"))?;
-		let num_recs = read
-			.read_i32::<LittleEndian>()
-			.map_err(|_| HeaderParseError("Failed to parse header num recs"))? as usize;
+		let num_recs =
+			read.read_i32::<LittleEndian>()
+				.map_err(|_| HeaderParseError("Failed to parse header num recs"))? as usize;
 		let end_offset = read
 			.read_u32::<LittleEndian>()
 			.map_err(|_| HeaderParseError("Failed to parse header end offset"))?;
@@ -143,7 +141,6 @@ impl Header {
 			num_recs,
 			end_offset,
 			flags,
-			crc,
 		})
 	}
 
@@ -193,5 +190,17 @@ impl Header {
 			.map_err(|_| HeaderWriteError("Failed to write header to writer"))?;
 
 		Ok(())
+	}
+
+	pub fn clone_with_num_recs(&self, num_recs: usize) -> Header {
+		Header {
+			id: self.id.clone(),
+			app_id: self.app_id.clone(),
+			app_name: self.app_name.clone(),
+			version: self.version,
+			num_recs,
+			end_offset: self.end_offset,
+			flags: self.flags,
+		}
 	}
 }

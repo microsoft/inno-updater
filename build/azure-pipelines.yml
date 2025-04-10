@@ -32,6 +32,7 @@ extends:
     buildPlatforms:
       - name: windows
         target: i686-pc-windows-msvc
+    runTest: true
 
     # preBuildSteps:
     #   - pwsh: Rename-Item -Path ".cargo/config.toml.disabled" -NewName ".cargo/config.toml"
