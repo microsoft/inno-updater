@@ -1,6 +1,6 @@
 # inno-updater
 
-[![CI](https://github.com/microsoft/inno-updater/actions/workflows/ci.yml/badge.svg)](https://github.com/microsoft/inno-updater/actions/workflows/ci.yml)
+[![Build Status](https://dev.azure.com/monacotools/Monaco/_apis/build/status%2FMisc%2Finno-updater?repoName=microsoft%2Finno-updater&branchName=main)](https://dev.azure.com/monacotools/Monaco/_build/latest?definitionId=623&repoName=microsoft%2Finno-updater&branchName=main)
 
 Helper utility to enable background updates for VS Code in Windows
 
