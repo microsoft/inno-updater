@@ -5,7 +5,7 @@
 
 use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::prelude::*;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::string::String;
 use std::{error, fmt};
 
@@ -156,7 +156,7 @@ impl<'a> error::Error for StringEncodeError<'a> {
 	}
 }
 
-fn encode_strings<'a>(strings: &[String]) -> Result<Vec<u8>, StringEncodeError<'a>> {
+fn encode_strings<'a>(strings: &Vec<String>) -> Result<Vec<u8>, StringEncodeError<'a>> {
 	let mut result: Vec<u8> = Vec::with_capacity(1024);
 
 	for string in strings.iter() {
@@ -302,16 +302,28 @@ impl FileRec {
 			.and_then(|p| p.to_str())
 			.ok_or(RebaseError)?;
 
-		let rebased_paths: Vec<String> = paths
+		let rebased_paths = paths
 			.iter()
-			.map(|p| {
-				if let Some(p) = p.strip_prefix(from) {
-					format!("{to}{p}")
-				} else {
-					p.clone()
-				}
+			.map(|original| {
+				Path::new(original)
+					// strip prefix
+					.strip_prefix(from)
+					.map_err(|_| RebaseError)
+					// join with new path
+					.and_then(|p| Ok(PathBuf::from(to).join(p)))
+					// convert to string
+					.and_then(|p| p.to_str().map(|s| s.to_owned()).ok_or(RebaseError))
+					// remove trailing backslash
+					.and_then(|s| {
+						if s.ends_with('\\') {
+							Ok(s[..s.len() - 1].to_owned())
+						} else {
+							Ok(s)
+						}
+					})
+					.unwrap_or(original.to_owned())
 			})
-			.collect();
+			.collect::<Vec<String>>();
 
 		Ok(FileRec {
 			typ: self.typ,
@@ -373,17 +385,33 @@ mod tests {
 
 	#[test]
 	fn test_rebase() {
-		let data = encode_strings(&[String::from("C:\\Temp\\test.txt")]).unwrap();
+		let strings = vec![
+			String::from("C:\\Code\\foo.txt"),
+			String::from("C:\\Code\\_\\bar.txt"),
+			String::from("C:\\Code\\_\\foo\\bar.txt"),
+		];
+
+		let data = encode_strings(&strings).unwrap();
 		let record = FileRec {
 			typ: UninstallRecTyp::DeleteFile,
 			extra_data: 0,
 			data,
 		};
 
-		let rebased = record.rebase(Path::new("C:\\Temp\\")).unwrap();
-		let paths = rebased.get_paths().unwrap();
+		let expected = vec![
+			"C:\\Code\\foo.txt",
+			"C:\\Code\\bar.txt",
+			"C:\\Code\\foo\\bar.txt",
+		];
 
-		assert_eq!(paths[0], "C:\\test.txt");
+		let rebased = record.rebase(Path::new("C:\\Code\\_")).unwrap();
+		let paths = rebased.get_paths().unwrap();
+		assert_eq!(paths, expected);
+
+		// Test with trailing backslash
+		let rebased = record.rebase(Path::new("C:\\Code\\_\\")).unwrap();
+		let paths = rebased.get_paths().unwrap();
+		assert_eq!(paths, expected);
 	}
 
 	#[test]
