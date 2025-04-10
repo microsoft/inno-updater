@@ -25,8 +25,7 @@ mod util;
 use handle::FileHandle;
 use model::{FileRec, Header};
 use slog::Drain;
-use std::collections::HashSet;
-use std::collections::LinkedList;
+use std::collections::{HashSet, LinkedList};
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -277,22 +276,12 @@ fn move_update(
 fn patch_uninstdat(
 	log: &slog::Logger,
 	uninstdat_path: &PathBuf,
-	update_folder_name: &str,
+	update_path: &PathBuf,
 ) -> Result<(), Box<dyn error::Error>> {
 	let (header, recs) = read_file(uninstdat_path)?;
 
 	info!(log, "header: {:?}", header);
 	info!(log, "num_recs: {:?}", recs.len());
-
-	let root_path = uninstdat_path.parent().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get parent path of uninstdat",
-		)
-	})?;
-
-	let mut update_path = PathBuf::from(root_path);
-	update_path.push(update_folder_name);
 
 	let recs: Vec<FileRec> = recs
 		.iter()
@@ -363,9 +352,19 @@ fn do_update(
 
 	move_update(log, &uninstdat_path, update_folder_name)?;
 
+	let root_path = uninstdat_path.parent().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent path of uninstdat",
+		)
+	})?;
+
+	let mut update_path = PathBuf::from(root_path);
+	update_path.push(update_folder_name);
+
 	// if, for any reason, the uninstdat file is corrupt, let's continue silently
 	// https://github.com/Microsoft/vscode/issues/45607
-	patch_uninstdat(log, &uninstdat_path, update_folder_name).unwrap_or_else(|err| {
+	patch_uninstdat(log, &uninstdat_path, &update_path).unwrap_or_else(|err| {
 		warn!(log, "Failed to patch uninst.dat file");
 		warn!(log, "{}", err);
 	});
@@ -506,6 +505,7 @@ fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 	use std::collections::HashMap;
 	let mut map: HashMap<u16, u32> = HashMap::new();
 
+	println!("Paths");
 	for rec in recs {
 		let count = map.entry(rec.typ as u16).or_insert(0);
 		*count += 1;
@@ -514,15 +514,18 @@ fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
 				let paths = rec.get_paths().unwrap();
 				for path in paths {
-					println!("  Path: {}", path);
+					println!("  {}", path);
 				}
 			}
 			_ => {}
 		}
 	}
 
-	for (k, c) in &map {
-		println!("Record type 0x{:x}, count {}", k, c);
+	println!("Summary");
+	let mut records: Vec<_> = map.into_iter().collect();
+	records.sort_by(|a, b| a.0.cmp(&b.0));
+	for (k, c) in &records {
+		println!("  {} records of type 0x{:x}", c, k);
 	}
 
 	Ok(())
@@ -544,6 +547,29 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
+	} else if args.len() == 4 && args[1] == "--update" {
+		let uninstdat_path = PathBuf::from(&args[2]);
+		let update_path = PathBuf::from(&args[3]);
+
+		let decorator = slog_term::TermDecorator::new().build();
+		let drain = slog_term::FullFormat::new(decorator).build().fuse();
+		let drain = slog_async::Async::new(drain).build().fuse();
+		let log = slog::Logger::root(drain, o!());
+
+		info!(
+			log,
+			"Updating uninstall file {:?}, update path {:?}", uninstdat_path, update_path
+		);
+
+		patch_uninstdat(&log, &uninstdat_path, &update_path).unwrap_or_else(|err| {
+			eprintln!("{}", err);
+			std::process::exit(1);
+		});
+
+		info!(
+			log,
+			"Successfully updated uninstall file {:?}", uninstdat_path
+		);
 	} else if args.len() >= 3 && args[1] == "--gui" {
 		let (tx, rx) = mpsc::channel();
 		let label = args[2].clone();
