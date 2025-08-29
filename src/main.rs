@@ -12,6 +12,8 @@ extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
 extern crate windows_sys;
+#[cfg(test)]
+extern crate tempfile;
 
 mod blockio;
 mod gui;
@@ -394,9 +396,119 @@ fn update(
 		.recv()
 		.map_err(|_| io::Error::new(io::ErrorKind::Other, "Could not receive GUI window handle"))?;
 
-	do_update(log, code_path, update_folder_name)?;
-	window.exit();
+	// 2) Get the basename and dirname of code_path
+	let dir_path = code_path.parent().ok_or_else(|| {
+		io::Error::new(io::ErrorKind::Other, "Could not get parent directory of code_path")
+	})?;
 
+	let basename = code_path.file_name().ok_or_else(|| {
+		io::Error::new(io::ErrorKind::Other, "Could not get basename of code_path")
+	})?;
+
+	let basename_str = basename.to_string_lossy();
+
+	// 3) Create variables for old_{basename} and new_{basename}
+	let old_exe_filename = format!("old_{}", basename_str);
+	let new_exe_filename = format!("new_{}", basename_str);
+
+	let old_exe_path = dir_path.join(&old_exe_filename);
+	let new_exe_path = dir_path.join(&new_exe_filename);
+
+	info!(log, "Starting rename process: code_path={:?}, old_exe_path={:?}, new_exe_path={:?}", 
+		code_path, old_exe_path, new_exe_path);
+
+	// 4) Check for the presence of new_exe_filename and proceed with renaming
+	if new_exe_path.exists() {
+		info!(log, "Found new executable: {:?}", new_exe_path);
+
+		// 5) Handle the bin folder files with 3-way rename
+		let bin_dir = dir_path.join("bin");
+		if bin_dir.exists() {
+			info!(log, "Processing bin directory: {:?}", bin_dir);
+
+			// Collect all files in the bin directory for processing
+			let mut bin_files = Vec::new();
+			if let Ok(entries) = fs::read_dir(&bin_dir) {
+				for entry in entries {
+					if let Ok(entry) = entry {
+						let file_name = entry.file_name();
+						let file_name_str = file_name.to_string_lossy();
+
+						// Skip files that already have old_ or new_ prefix
+						if !file_name_str.starts_with("old_") && !file_name_str.starts_with("new_") {
+							bin_files.push(file_name.to_string_lossy().to_string());
+						}
+					}
+				}
+			}
+
+			// Track files that were successfully renamed for potential rollback
+			let mut renamed_files = Vec::new();
+
+			// Process each file in the bin directory
+			for file_name in bin_files {
+				let current_file = bin_dir.join(&file_name);
+				let old_file = bin_dir.join(format!("old_{}", file_name));
+				let new_file = bin_dir.join(format!("new_{}", file_name));
+
+				// Perform three-way rename for bin file
+				if new_file.exists() {
+					info!(log, "Found new bin file: {:?}", new_file);
+
+					match perform_three_way_rename(log, &current_file, &old_file, &new_file) {
+						Ok(_) => {
+							// Track this file was successfully renamed
+							renamed_files.push(file_name);
+						},
+						Err(err) => {
+							error!(log, "Bin file update failed for {:?}: {}", file_name, err);
+							// Continue to next file, don't rollback everything yet
+							continue;
+						}
+					}
+				}
+			}
+
+			info!(log, "Bin directory processing complete. Successfully renamed {} files", renamed_files.len());
+		} else {
+			info!(log, "Bin directory does not exist, skipping bin file processing");
+		}
+
+		// Perform three-way rename for the main executable
+		if let Err(err) = perform_three_way_rename(log, code_path, &old_exe_path, &new_exe_path) {
+			error!(log, "Executable update failed: {}", err);
+			window.exit();
+			return Err(err);
+		}
+
+		// Also perform three-way rename for the VisualElementsManifest.xml file
+		let basename_without_ext = basename_str.strip_suffix(".exe").unwrap_or(&basename_str);
+		let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
+		let manifest_path = dir_path.join(&manifest_filename);
+		let old_manifest_filename = format!("old_{}", manifest_filename);
+		let new_manifest_filename = format!("new_{}", manifest_filename);
+		let old_manifest_path = dir_path.join(&old_manifest_filename);
+		let new_manifest_path = dir_path.join(&new_manifest_filename);
+
+		if new_manifest_path.exists() {
+			info!(log, "Found new manifest file: {:?}", new_manifest_path);
+			if let Err(err) = perform_three_way_rename(log, &manifest_path, &old_manifest_path, &new_manifest_path) {
+				error!(log, "Manifest file update failed: {}", err);
+			} else {
+				info!(log, "Successfully updated manifest file");
+			}
+		} else {
+			info!(log, "No new manifest file found: {:?}", new_manifest_path);
+		}
+
+		info!(log, "Update completed successfully");
+	} else {
+		info!(log, "New executable not found: {:?}, using traditional update method", new_exe_path);
+		// Fall back to the original update method if no new executable is found
+		do_update(log, code_path, update_folder_name)?;
+	}
+
+	window.exit();
 	Ok(())
 }
 
@@ -529,6 +641,149 @@ fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 	}
 
 	Ok(())
+}
+
+fn perform_three_way_rename(
+	log: &slog::Logger,
+	current_path: &Path,
+	old_path: &Path,
+	new_path: &Path,
+) -> Result<(), Box<dyn error::Error>> {
+	// Step 1: If new file exists and current file exists, rename current to old
+	if new_path.exists() && current_path.exists() {
+		info!(log, "Renaming current to old: {:?} -> {:?}", current_path, old_path);
+		if let Err(err) = fs::rename(current_path, old_path) {
+			error!(log, "Failed to rename current to old: {}", err);
+			return Err(Box::new(io::Error::new(
+				io::ErrorKind::Other,
+				format!("Failed to rename current to old: {}", err),
+			)));
+		}
+	} else if !new_path.exists() {
+		// No new file to rename, so nothing to do
+		return Ok(());
+	}
+
+	// Step 2: Rename new to current
+	info!(log, "Renaming new to current: {:?} -> {:?}", new_path, current_path);
+	if let Err(err) = fs::rename(new_path, current_path) {
+		error!(log, "Failed to rename new to current, attempting to restore old: {}", err);
+
+		// Restore old file if the operation fails and old file exists
+		if old_path.exists() {
+			info!(log, "Restoring old file: {:?} -> {:?}", old_path, current_path);
+			if let Err(restore_err) = fs::rename(old_path, current_path) {
+				error!(log, "Failed to restore old file: {}", restore_err);
+			}
+		}
+
+		return Err(Box::new(io::Error::new(
+			io::ErrorKind::Other,
+			format!("Failed to rename new to current: {}", err),
+		)));
+	}
+
+	Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::tempdir;
+    use slog::{Logger, o};
+    use slog_term::{TermDecorator, FullFormat};
+    use slog_async::Async;
+
+    // Helper function to set up a test logger
+    fn setup_test_logger() -> Logger {
+        let decorator = TermDecorator::new().build();
+        let drain = FullFormat::new(decorator).build().fuse();
+        let drain = Async::new(drain).build().fuse();
+        Logger::root(drain, o!())
+    }
+
+    #[test]
+    fn test_perform_three_way_rename_basic() {
+        // Create a temporary directory for our test
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+
+        // Set up our test paths
+        let current_path = temp_dir.path().join("current.txt");
+        let old_path = temp_dir.path().join("old_current.txt");
+        let new_path = temp_dir.path().join("new_current.txt");
+
+        // Create test files
+        fs::write(&current_path, "current content").unwrap();
+        fs::write(&new_path, "new content").unwrap();
+
+        // Perform the rename operation
+        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+
+        // Verify results
+        assert!(result.is_ok(), "Rename operation should succeed");
+        assert!(current_path.exists(), "Current file should exist");
+        assert!(!new_path.exists(), "New file should be renamed");
+        assert!(old_path.exists(), "Old file should exist");
+
+        // Verify content
+        let current_content = fs::read_to_string(&current_path).unwrap();
+        let old_content = fs::read_to_string(&old_path).unwrap();
+        assert_eq!(current_content, "new content", "Current file should contain new content");
+        assert_eq!(old_content, "current content", "Old file should contain original content");
+    }
+
+    #[test]
+    fn test_perform_three_way_rename_no_current_file() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+
+        let current_path = temp_dir.path().join("current.txt");
+        let old_path = temp_dir.path().join("old_current.txt");
+        let new_path = temp_dir.path().join("new_current.txt");
+
+        // Only create the new file (no current file)
+        fs::write(&new_path, "new content").unwrap();
+
+        // Perform the rename operation
+        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+
+        // Verify results
+        assert!(result.is_ok(), "Rename operation should succeed even without current file");
+        assert!(current_path.exists(), "Current file should exist after rename");
+        assert!(!new_path.exists(), "New file should be renamed");
+        assert!(!old_path.exists(), "Old file should not exist as there was no current file");
+
+        // Verify content
+        let current_content = fs::read_to_string(&current_path).unwrap();
+        assert_eq!(current_content, "new content", "Current file should contain new content");
+    }
+
+    #[test]
+    fn test_perform_three_way_rename_no_new_file() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+
+        let current_path = temp_dir.path().join("current.txt");
+        let old_path = temp_dir.path().join("old_current.txt");
+        let new_path = temp_dir.path().join("new_current.txt");
+
+        // Only create the current file (no new file)
+        fs::write(&current_path, "current content").unwrap();
+
+        // Perform the rename operation
+        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+
+        // Verify results
+        assert!(result.is_ok(), "Rename operation should return Ok when there's no new file");
+        assert!(current_path.exists(), "Current file should still exist");
+        assert!(!old_path.exists(), "Old file should not exist as rename wasn't needed");
+
+        // Verify content is unchanged
+        let current_content = fs::read_to_string(&current_path).unwrap();
+        assert_eq!(current_content, "current content", "Current file should be unchanged");
+    }
 }
 
 fn main() {
