@@ -686,6 +686,190 @@ fn perform_three_way_rename(
 	Ok(())
 }
 
+fn remove_files(
+	log: &slog::Logger,
+	code_path: &Path,
+	commit: &str,
+) -> Result<(), Box<dyn error::Error>> {
+	info!(log, "remove_files: {:?}, commit: {}", code_path, commit);
+
+	let base_dir = code_path.parent().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent directory of code_path",
+		)
+	})?;
+
+	let code_basename = code_path.file_name().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get basename of code_path",
+		)
+	})?;
+
+	let code_basename_str = code_basename.to_string_lossy();
+	let basename_without_ext = code_basename_str.strip_suffix(".exe").unwrap_or(&code_basename_str);
+	let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
+
+	let mut top_directories: LinkedList<PathBuf> = LinkedList::new();
+	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
+
+	info!(log, "Reading top-level directory: {:?}", base_dir);
+
+	// Only process top-level contents of base_dir
+	for entry in fs::read_dir(base_dir)? {
+		let entry = entry?;
+		let entry_name = entry.file_name();
+		let entry_name = entry_name
+			.to_str()
+			.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get entry name"))?;
+
+		let entry_file_type = entry.file_type()?;
+		let entry_path = entry.path();
+
+		let should_skip = 
+			// Skip deleting code_path executable
+			if entry_path == code_path {
+				info!(log, "Skipping code_path executable: {:?}", entry_path);
+				true
+			}
+			// Skip basename.VisualElementsManifest.xml
+			else if entry_name == manifest_filename {
+				info!(log, "Skipping VisualElementsManifest.xml: {:?}", entry_path);
+				true
+			}
+			// Skip files starting with "unins"
+			else if entry_name.starts_with("unins") {
+				info!(log, "Skipping unins file: {:?}", entry_path);
+				true
+			}
+			// Skip commit folder
+			else if entry_name == commit && entry_file_type.is_dir() {
+				info!(log, "Skipping commit folder: {:?}", entry_path);
+				true
+			}
+			else {
+				false
+			};
+
+		if should_skip {
+			continue;
+		}
+
+		if entry_file_type.is_dir() {
+			// Special handling for bin directory (Rule 3)
+			if entry_name == "bin" {
+				info!(log, "Processing bin directory: {:?}", entry_path);
+				
+				// Process files in bin directory
+				for bin_entry in fs::read_dir(&entry_path)? {
+					let bin_entry = bin_entry?;
+					let bin_entry_name = bin_entry.file_name();
+					let bin_entry_name = bin_entry_name
+						.to_str()
+						.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get bin entry name"))?;
+
+					let bin_entry_file_type = bin_entry.file_type()?;
+					let bin_entry_path = bin_entry.path();
+
+					// In bin folder, only delete files starting with "old_"
+					if bin_entry_file_type.is_file() {
+						if bin_entry_name.starts_with("old_") {
+							info!(log, "Will delete old file in bin: {:?}", bin_entry_path);
+							
+							let msg = format!("Opening file handle: {:?}", bin_entry_path);
+							let file_handle = util::retry(
+								&msg,
+								|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
+									info!(
+										log,
+										"Get file handle: {:?} (attempt {})", bin_entry_path, attempt
+									);
+
+									FileHandle::new(&bin_entry_path)
+								},
+								Some(16),
+							)?;
+
+							file_handles.push_back(file_handle);
+						} else {
+							info!(log, "Skipping non-old file in bin: {:?}", bin_entry_path);
+						}
+					}
+				}
+
+				// Don't add bin directory itself to top_directories for deletion
+			} else {
+				// Delete other directories entirely
+				top_directories.push_back(entry_path.to_owned());
+			}
+		} else if entry_file_type.is_file() {
+			// Delete top-level files (except those already skipped)
+			let msg = format!("Opening file handle: {:?}", entry_path);
+			let file_handle = util::retry(
+				&msg,
+				|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
+					info!(
+						log,
+						"Get file handle: {:?} (attempt {})", entry_path, attempt
+					);
+
+					FileHandle::new(&entry_path)
+				},
+				Some(16),
+			)?;
+
+			file_handles.push_back(file_handle);
+		}
+	}
+
+	info!(log, "Collected all directories and file handles for removal");
+
+	for file_handle in &file_handles {
+		util::retry(
+			"marking a file for deletion",
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.mark_for_deletion() },
+			None,
+		)?;
+	}
+
+	info!(log, "All file handles marked for deletion");
+
+	for file_handle in &file_handles {
+		util::retry(
+			"closing a file handle",
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.close() },
+			None,
+		)?;
+	}
+
+	info!(log, "All files deleted");
+
+	for dir in top_directories {
+		let msg = format!("Deleting a directory: {:?}", dir);
+		util::retry(
+			&msg,
+			|attempt| -> Result<(), Box<dyn error::Error>> {
+				if !dir.exists() {
+					return Ok(());
+				}
+
+				info!(
+					log,
+					"Delete directory recursively: {:?} (attempt {})", dir, attempt
+				);
+
+				fs::remove_dir_all(&dir)?;
+				Ok(())
+			},
+			None,
+		)?;
+	}
+
+	info!(log, "File removal operation completed");
+	Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -784,6 +968,51 @@ mod tests {
         let current_content = fs::read_to_string(&current_path).unwrap();
         assert_eq!(current_content, "current content", "Current file should be unchanged");
     }
+
+    #[test]
+    fn test_remove_files_basic() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        // Create test structure
+        let code_path = base_dir.join("code.exe");
+        let manifest_path = base_dir.join("code.VisualElementsManifest.xml");
+        let commit_dir = base_dir.join("abc123");
+        let bin_dir = base_dir.join("bin");
+        let unins_file = base_dir.join("unins000.dat");
+        let some_file = base_dir.join("somefile.txt");
+		let other_dir = base_dir.join("otherdir");
+
+        // Create files and directories
+        fs::write(&code_path, "executable content").unwrap();
+        fs::write(&manifest_path, "manifest content").unwrap();
+        fs::create_dir(&commit_dir).unwrap();
+        fs::write(commit_dir.join("commit_file.txt"), "commit content").unwrap();
+        fs::create_dir(&bin_dir).unwrap();
+        fs::write(bin_dir.join("old_binary.exe"), "old binary").unwrap();
+        fs::write(bin_dir.join("new_binary.exe"), "new binary").unwrap();
+        fs::write(&unins_file, "uninstall data").unwrap();
+        fs::write(&some_file, "some file content").unwrap();
+		fs::create_dir(&other_dir).unwrap();
+        fs::write(other_dir.join("other_file.txt"), "other content").unwrap();
+
+        // Perform the remove operation
+        let result = remove_files(&log, &code_path, "abc123");
+
+        assert!(result.is_ok(), "Remove operation should succeed");
+        assert!(code_path.exists(), "Code executable should be preserved");
+        assert!(manifest_path.exists(), "VisualElementsManifest.xml should be preserved");
+        assert!(commit_dir.exists(), "Commit directory should be preserved");
+        assert!(commit_dir.join("commit_file.txt").exists(), "Files in commit dir should be preserved");
+        assert!(unins_file.exists(), "Unins files should be preserved");
+		assert!(bin_dir.join("new_binary.exe").exists(), "Non-old files in bin should be preserved");
+
+
+        assert!(!some_file.exists(), "Random files should be deleted");
+        assert!(!bin_dir.join("old_binary.exe").exists(), "Old files in bin should be deleted");
+		assert!(!other_dir.exists(), "Other directories should be deleted");
+    }
 }
 
 fn main() {
@@ -802,6 +1031,36 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
+	} else if args.len() == 4 && args[1] == "--remove" {
+		let code_path = PathBuf::from(&args[2]);
+		let commit = &args[3];
+
+		if !code_path.is_absolute() {
+			eprintln!("Error: Code path needs to be absolute. Instead got: {}", args[2]);
+			std::process::exit(1);
+		}
+
+		if !code_path.exists() {
+			eprintln!("Error: Code path doesn't seem to exist: {}", args[2]);
+			std::process::exit(1);
+		}
+
+		let decorator = slog_term::TermDecorator::new().build();
+		let drain = slog_term::FullFormat::new(decorator).build().fuse();
+		let drain = slog_async::Async::new(drain).build().fuse();
+		let log = slog::Logger::root(drain, o!());
+
+		info!(
+			log,
+			"Removing files from base directory of {:?}, preserving commit folder: {}", code_path, commit
+		);
+
+		remove_files(&log, &code_path, commit).unwrap_or_else(|err| {
+			eprintln!("Error during file removal: {}", err);
+			std::process::exit(1);
+		});
+
+		info!(log, "Successfully completed file removal operation");
 	} else if args.len() == 4 && args[1] == "--update" {
 		let uninstdat_path = PathBuf::from(&args[2]);
 		let update_path = PathBuf::from(&args[3]);
