@@ -380,6 +380,7 @@ fn update(
 	update_folder_name: &str,
 	silent: bool,
 	label: String,
+	commit: Option<String>,
 ) -> Result<(), Box<dyn error::Error>> {
 	process::wait_or_kill(log, code_path)?;
 
@@ -502,6 +503,16 @@ fn update(
 		}
 
 		info!(log, "Update completed successfully");
+
+		// If a commit argument was provided, attempt to remove files not associated with that commit
+		if let Some(ref commit_str) = commit {
+			info!(log, "Commit specified: {} - attempting to remove files", commit_str);
+			if let Err(err) = remove_files(log, code_path, commit_str) {
+				warn!(log, "Failed to remove files for commit {}: {}", commit_str, err);
+			} else {
+				info!(log, "Removed files for commit {}", commit_str);
+			}
+		}
 	} else {
 		info!(log, "New executable not found: {:?}, using traditional update method", new_exe_path);
 		// Fall back to the original update method if no new executable is found
@@ -560,7 +571,14 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 
 	let label = args[3].clone();
 
-	update(log, &code_path, "_", silent == "true", label)
+	// optional commit arg in args[4]
+	let commit = if args.len() > 4 {
+		Some(args[4].clone())
+	} else {
+		None
+	};
+
+	update(log, &code_path, "_", silent == "true", label, commit)
 }
 
 fn handle_error(log_path: &str) {
