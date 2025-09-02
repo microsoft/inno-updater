@@ -707,9 +707,9 @@ fn perform_three_way_rename(
 fn remove_files(
 	log: &slog::Logger,
 	code_path: &Path,
-	commit: &str,
+	commit_to_preserve: &str,
 ) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "remove_files: {:?}, commit: {}", code_path, commit);
+	info!(log, "remove_files: {:?}, commit: {}", code_path, commit_to_preserve);
 
 	let base_dir = code_path.parent().ok_or_else(|| {
 		io::Error::new(
@@ -729,8 +729,8 @@ fn remove_files(
 	let basename_without_ext = code_basename_str.strip_suffix(".exe").unwrap_or(&code_basename_str);
 	let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
 
-	let mut top_directories: LinkedList<PathBuf> = LinkedList::new();
-	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
+	let mut directories_to_remove: LinkedList<PathBuf> = LinkedList::new();
+	let mut file_handles_to_remove: LinkedList<FileHandle> = LinkedList::new();
 
 	info!(log, "Reading top-level directory: {:?}", base_dir);
 
@@ -762,7 +762,7 @@ fn remove_files(
 				true
 			}
 			// Skip commit folder
-			else if entry_name == commit && entry_file_type.is_dir() {
+			else if entry_name == commit_to_preserve && entry_file_type.is_dir() {
 				info!(log, "Skipping commit folder: {:?}", entry_path);
 				true
 			}
@@ -809,7 +809,7 @@ fn remove_files(
 								Some(16),
 							)?;
 
-							file_handles.push_back(file_handle);
+							file_handles_to_remove.push_back(file_handle);
 						} else {
 							info!(log, "Skipping non-old file in bin: {:?}", bin_entry_path);
 						}
@@ -819,7 +819,7 @@ fn remove_files(
 				// Don't add bin directory itself to top_directories for deletion
 			} else {
 				// Delete other directories entirely
-				top_directories.push_back(entry_path.to_owned());
+				directories_to_remove.push_back(entry_path.to_owned());
 			}
 		} else if entry_file_type.is_file() {
 			// Delete top-level files (except those already skipped)
@@ -837,13 +837,13 @@ fn remove_files(
 				Some(16),
 			)?;
 
-			file_handles.push_back(file_handle);
+			file_handles_to_remove.push_back(file_handle);
 		}
 	}
 
 	info!(log, "Collected all directories and file handles for removal");
 
-	for file_handle in &file_handles {
+	for file_handle in &file_handles_to_remove {
 		util::retry(
 			"marking a file for deletion",
 			|_| -> Result<(), Box<dyn error::Error>> { file_handle.mark_for_deletion() },
@@ -853,7 +853,7 @@ fn remove_files(
 
 	info!(log, "All file handles marked for deletion");
 
-	for file_handle in &file_handles {
+	for file_handle in &file_handles_to_remove {
 		util::retry(
 			"closing a file handle",
 			|_| -> Result<(), Box<dyn error::Error>> { file_handle.close() },
@@ -863,7 +863,7 @@ fn remove_files(
 
 	info!(log, "All files deleted");
 
-	for dir in top_directories {
+	for dir in directories_to_remove {
 		let msg = format!("Deleting a directory: {:?}", dir);
 		util::retry(
 			&msg,
@@ -1049,9 +1049,9 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
-	} else if args.len() == 4 && args[1] == "--remove" {
+	} else if args.len() == 4 && args[1] == "--gc" {
 		let code_path = PathBuf::from(&args[2]);
-		let commit = &args[3];
+		let commit_to_preserve = &args[3];
 
 		if !code_path.is_absolute() {
 			eprintln!("Error: Code path needs to be absolute. Instead got: {}", args[2]);
@@ -1063,17 +1063,24 @@ fn main() {
 			std::process::exit(1);
 		}
 
-		let decorator = slog_term::TermDecorator::new().build();
+		let file = fs::OpenOptions::new()
+			.create(true)
+			.write(true)
+			.truncate(true)
+			.open(&log_path)
+			.unwrap();
+
+		let decorator = slog_term::PlainDecorator::new(file);
 		let drain = slog_term::FullFormat::new(decorator).build().fuse();
 		let drain = slog_async::Async::new(drain).build().fuse();
 		let log = slog::Logger::root(drain, o!());
 
 		info!(
 			log,
-			"Removing files from base directory of {:?}, preserving commit folder: {}", code_path, commit
+			"Removing files from base directory of {:?}, preserving commit folder: {}", code_path, commit_to_preserve
 		);
 
-		remove_files(&log, &code_path, commit).unwrap_or_else(|err| {
+		remove_files(&log, &code_path, commit_to_preserve).unwrap_or_else(|err| {
 			eprintln!("Error during file removal: {}", err);
 			std::process::exit(1);
 		});
