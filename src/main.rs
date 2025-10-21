@@ -502,6 +502,9 @@ fn update(
 			info!(log, "No new manifest file found: {:?}", new_manifest_path);
 		}
 
+		window.update_status("Attempting to stop current running application...");
+		process::wait_or_kill(log, code_path)?;
+
 		// If a commit argument was provided, attempt to remove files not associated with that commit
 		if let Some(ref commit_str) = commit {
 			window.update_status("Cleaning up old files...");
@@ -512,9 +515,6 @@ fn update(
 				info!(log, "Removed files for commit {}", commit_str);
 			}
 		}
-
-		window.update_status("Attempting to stop current running application...");
-		process::wait_or_kill(log, code_path)?;
 
 		window.update_status("Update completed successfully!");
 		info!(log, "Update completed successfully");
