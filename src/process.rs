@@ -284,3 +284,93 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 		None,
 	)
 }
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::path::PathBuf;
+	use std::process::{Command, Child};
+	use std::thread;
+	use std::time::Duration;
+	use slog::{Logger, o, Drain};
+	use slog_term::{TermDecorator, FullFormat};
+	use slog_async::Async;
+
+	fn setup_test_logger() -> Logger {
+		let decorator = TermDecorator::new().build();
+		let drain = FullFormat::new(decorator).build().fuse();
+		let drain = Async::new(drain).build().fuse();
+		Logger::root(drain, o!())
+	}
+
+	fn get_test_helper_path() -> PathBuf {
+		let mut path = std::env::current_exe().unwrap();
+		path.pop();
+		path.push("test_helper.exe");
+		path
+	}
+
+	fn start_test_process(args: &[&str]) -> Result<Child, std::io::Error> {
+		let test_helper = get_test_helper_path();
+		Command::new(&test_helper)
+			.args(args)
+			.spawn()
+	}
+
+	fn wait_for_process_start(expected_name: &str, timeout_ms: u64) -> bool {
+		let start = std::time::Instant::now();
+		while start.elapsed().as_millis() < timeout_ms as u128 {
+			if let Ok(processes) = get_running_processes() {
+				if processes.iter().any(|p| p.name == expected_name) {
+					return true;
+				}
+			}
+			thread::sleep(Duration::from_millis(10));
+		}
+		false
+	}
+
+	#[test]
+	fn test_wait_or_kill_no_processes_running() {
+		let log = setup_test_logger();
+		let fake_path = PathBuf::from("C:\\nonexistent\\fake_process.exe");
+		let result = wait_or_kill(&log, &fake_path);
+		assert!(result.is_ok(), "Should succeed when no processes are running");
+	}
+
+	#[test]
+	fn test_wait_or_kill_process_exits_naturally() {
+		let log = setup_test_logger();
+		let test_helper_path = get_test_helper_path();
+		let mut child = start_test_process(&["run-for-duration", "5"]).expect("Failed to start test process");
+		assert!(wait_for_process_start("test_helper.exe", 1000), "Test process should start and be visible");
+		let result = wait_or_kill(&log, &test_helper_path);
+		let _ = child.wait();
+		assert!(result.is_ok(), "Should succeed when process exits naturally");
+	}
+
+	#[test]
+	fn test_wait_or_kill_invalid_path() {
+		let log = setup_test_logger();
+		let path = PathBuf::from("");
+		let result = wait_or_kill(&log, &path);
+		assert!(result.is_err(), "Should fail with invalid path");
+		assert!(result.unwrap_err().to_string().contains("Could not get process file name"));
+	}
+
+	#[test]
+	fn test_wait_or_kill_multiple_processes() {
+		let log = setup_test_logger();
+		let test_helper = get_test_helper_path();
+		let mut child1 = start_test_process(&["run-forever"]).expect("Failed to start test process 1");
+		let mut child2 = start_test_process(&["run-forever"]).expect("Failed to start test process 2");
+		assert!(wait_for_process_start("test_helper.exe", 2000), "Test process should start and be visible");
+		let processes = get_running_processes().unwrap();
+		let test_helper_count = processes.iter().filter(|p| p.name == "test_helper.exe").count();
+		assert!(test_helper_count >= 2, "Should have at least 2 test helper processes running");
+		let result = wait_or_kill(&log, &test_helper);
+		let _ = child1.wait();
+		let _ = child2.wait();
+		assert!(result.is_ok(), "Should succeed when killing multiple processes");
+	}
+}

@@ -3,6 +3,15 @@ name = "inno_updater"
 version = "0.17.1"
 authors = ["Microsoft <monacotools@microsoft.com>"]
 build = "build.rs"
+autobins = false
+
+[[bin]]
+name = "inno_updater"
+path = "src/main.rs"
+
+[[bin]]
+name = "test_helper"
+path = "src/bin/test_helper.rs"
 
 [dependencies]
 byteorder = "1.4.3"
