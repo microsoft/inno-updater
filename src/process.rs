@@ -133,6 +133,11 @@ fn kill_process_if(
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
 
+		info!(
+			log,
+			"Found {} running {}, attempting to kill...", process_path.display(), path.display()
+		);
+
 		if process_path != path {
 			CloseHandle(handle);
 			return Ok(());
@@ -304,10 +309,19 @@ mod tests {
 	}
 
 	fn get_test_helper_path() -> PathBuf {
-		let mut path = std::env::current_exe().unwrap();
-		path.pop();
-		path.push("test_helper.exe");
-		path
+		let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+		let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+		let target = std::env::var("TARGET").unwrap_or_else(|_| {
+			"i686-pc-windows-msvc".to_string()
+		});
+
+		// Resolve target_dir to absolute path relative to project root
+		let project_root = std::env::current_dir().expect("Failed to get current directory");
+		let absolute_target_dir = project_root.join(&target_dir);
+		absolute_target_dir
+			.join(&target)
+			.join(&profile)
+			.join("test_helper.exe")
 	}
 
 	fn start_test_process(args: &[&str]) -> Result<Child, std::io::Error> {
