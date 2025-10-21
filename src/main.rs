@@ -382,8 +382,6 @@ fn update(
 	label: String,
 	commit: Option<String>,
 ) -> Result<(), Box<dyn error::Error>> {
-	process::wait_or_kill(log, code_path)?;
-
 	info!(log, "Inno Updater v{}", VERSION);
 	info!(log, "Starting update, silent = {}", silent);
 
@@ -455,7 +453,7 @@ fn update(
 				// Perform three-way rename for bin file
 				if new_file.exists() {
 					info!(log, "Found new bin file: {:?}", new_file);
-
+					window.update_status("Renaming files under bin folder...");
 					match perform_three_way_rename(log, &current_file, &old_file, &new_file) {
 						Ok(_) => {
 							// Track this file was successfully renamed
@@ -476,6 +474,7 @@ fn update(
 		}
 
 		// Perform three-way rename for the main executable
+		window.update_status("Renaming main executable...");
 		if let Err(err) = perform_three_way_rename(log, code_path, &old_exe_path, &new_exe_path) {
 			error!(log, "Executable update failed: {}", err);
 			window.exit();
@@ -492,6 +491,7 @@ fn update(
 		let new_manifest_path = dir_path.join(&new_manifest_filename);
 
 		if new_manifest_path.exists() {
+			window.update_status("Renaming manifest file...");
 			info!(log, "Found new manifest file: {:?}", new_manifest_path);
 			if let Err(err) = perform_three_way_rename(log, &manifest_path, &old_manifest_path, &new_manifest_path) {
 				error!(log, "Manifest file update failed: {}", err);
@@ -502,10 +502,9 @@ fn update(
 			info!(log, "No new manifest file found: {:?}", new_manifest_path);
 		}
 
-		info!(log, "Update completed successfully");
-
 		// If a commit argument was provided, attempt to remove files not associated with that commit
 		if let Some(ref commit_str) = commit {
+			window.update_status("Cleaning up old files...");
 			info!(log, "Commit specified: {} - attempting to remove files", commit_str);
 			if let Err(err) = remove_files(log, code_path, commit_str) {
 				warn!(log, "Failed to remove files for commit {}: {}", commit_str, err);
@@ -513,6 +512,12 @@ fn update(
 				info!(log, "Removed files for commit {}", commit_str);
 			}
 		}
+
+		window.update_status("Attempting to stop current running application...");
+		process::wait_or_kill(log, code_path)?;
+
+		window.update_status("Update completed successfully!");
+		info!(log, "Update completed successfully");
 	} else {
 		info!(log, "New executable not found: {:?}, using traditional update method", new_exe_path);
 		// Fall back to the original update method if no new executable is found
@@ -1120,6 +1125,13 @@ fn main() {
 		let window = rx.recv().unwrap();
 		let duration = args.get(3).and_then(|v| v.parse().ok()).unwrap_or(5); // Default to 5 seconds if parsing fails
 
+		window.update_status("Performing operation...");
+		thread::sleep(std::time::Duration::from_secs(1));
+
+		window.update_status("Processing files...");
+		thread::sleep(std::time::Duration::from_secs(1));
+
+		window.update_status("Almost done...");
 		thread::sleep(std::time::Duration::from_secs(duration));
 		window.exit();
 	} else if args.len() == 3 && args[1] == "--retry-simulation" {

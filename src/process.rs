@@ -157,6 +157,33 @@ fn kill_process_if(
 	}
 }
 
+/**
+ * Checks if a process with the given PID is still running.
+ */
+fn is_process_running(pid: u32) -> bool {
+	use std::ffi::c_void;
+	use windows_sys::Win32::Foundation::CloseHandle;
+	use windows_sys::Win32::System::Threading::{
+		GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION,
+	};
+
+	const STILL_ACTIVE: u32 = 259;
+
+	unsafe {
+		let handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+
+		if ptr::eq(handle as *mut c_void, ptr::null()) {
+			return false;
+		}
+
+		let mut exit_code = 0u32;
+		let result = GetExitCodeProcess(handle, &mut exit_code);
+		CloseHandle(handle);
+
+		result != 0 && exit_code == STILL_ACTIVE
+	}
+}
+
 pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error::Error>> {
 	let file_name = path
 		.file_name()
@@ -169,49 +196,80 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 		)
 	})?;
 
-	let mut attempt: u32 = 0;
+	// Get the initial list of processes that match our target
+	let target_processes: Vec<RunningProcess> = get_running_processes()?
+		.into_iter()
+		.filter(|p| p.name == file_name)
+		.collect();
 
-	// wait for 10 seconds until all processes are dead
+	if target_processes.is_empty() {
+		info!(log, "{} is not running", file_name);
+		return Ok(());
+	}
+
+	info!(
+		log,
+		"Found {} running {} processes: {:?}",
+		target_processes.len(),
+		file_name,
+		target_processes.iter().map(|p| p.id).collect::<Vec<_>>()
+	);
+
+	let mut attempt: u32 = 0;
+	let mut still_running: Vec<&RunningProcess>;
+
+	// wait for up to 30 seconds until all target processes are dead
 	loop {
 		attempt += 1;
 
 		info!(
 			log,
-			"Checking for running {} processes... (attempt {})", file_name, attempt
+			"Checking if {} processes are still running... (attempt {})", file_name, attempt
 		);
 
-		let process_found = get_running_processes()?
-			.into_iter()
-			.any(|p| p.name == file_name);
+		still_running = target_processes
+			.iter()
+			.filter(|p| is_process_running(p.id))
+			.collect();
 
-		if !process_found {
-			info!(log, "{} is not running", file_name);
+		if still_running.is_empty() {
+			info!(log, "All {} processes have exited", file_name);
 			break;
 		}
 
 		// give up after 60 * 500ms = 30 seconds
 		if attempt == 60 {
-			info!(log, "Gave up waiting for {} to exit", file_name);
+			info!(
+				log,
+				"Gave up waiting for {} to exit, {} processes still running: {:?}",
+				file_name,
+				still_running.len(),
+				still_running.iter().map(|p| p.id).collect::<Vec<_>>()
+			);
 			break;
 		}
 
-		info!(log, "{} is running, wait a bit", file_name);
+		info!(
+			log,
+			"{} processes still running: {:?}, waiting...",
+			still_running.len(),
+			still_running.iter().map(|p| p.id).collect::<Vec<_>>()
+		);
 		thread::sleep(time::Duration::from_millis(500));
 	}
 
-	// try to kill any running processes
+	// try to kill any running target processes
 	util::retry(
-		"attempting to kill any running Code.exe processes",
+		"attempting to kill any running processes",
 		|attempt| {
 			info!(
 				log,
-				"Checking for possible conflicting running processes... (attempt {})", attempt
+				"Attempting to kill remaining processes... (attempt {})", attempt
 			);
 
-			let kill_errors: Vec<_> = get_running_processes()?
-				.into_iter()
-				.filter(|p| p.name == file_name)
-				.filter_map(|p| kill_process_if(log, &p, path).err())
+			let kill_errors: Vec<_> = still_running
+				.iter()
+				.filter_map(|p| kill_process_if(log, p, path).err())
 				.collect();
 
 			for err in &kill_errors {
@@ -220,7 +278,7 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 
 			match kill_errors.len() {
 				0 => Ok(()),
-				_ => Err(kill_errors.into_iter().nth(1).unwrap()),
+				_ => Err(kill_errors.into_iter().nth(0).unwrap()),
 			}
 		},
 		None,
