@@ -4,6 +4,45 @@ use std::io::Read;
 use std::path::Path;
 use std::process::Command;
 
+fn build_test_helper() {
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let target_dir = env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+
+    println!("cargo:warning=Building test_helper binary...");
+
+    let target = env::var("TARGET").unwrap_or_else(|_| {
+        "i686-pc-windows-msvc".to_string()
+    });
+
+    let test_helper_src = "src/bin/test_helper.rs";
+    let output_name = "test_helper.exe";
+
+    let output_path = Path::new(&target_dir)
+        .join(&target)
+        .join(&profile)
+        .join(output_name);
+
+    // Compile the test helper
+    let status = Command::new("rustc")
+        .args(&[
+            test_helper_src,
+            "-o", output_path.to_str().unwrap(),
+        ])
+        .status();
+
+    match status {
+        Ok(exit_status) if exit_status.success() => {
+            println!("cargo:warning=Successfully built test_helper at: {}", output_path.display());
+        },
+        Ok(_) => {
+            println!("cargo:warning=Failed to compile test_helper");
+        },
+        Err(e) => {
+            println!("cargo:warning=Error running rustc for test_helper: {}", e);
+        }
+    }
+}
+
 fn main() {
     // Get the package version from Cargo.toml through environment variables
     let version = env::var("CARGO_PKG_VERSION").expect("Failed to get package version");
@@ -75,9 +114,13 @@ fn main() {
         "cargo:rustc-link-lib={}",
         resources.file_stem().unwrap().to_str().unwrap()
     );
-    
+
+    // Build test_helper binary for tests
+    build_test_helper();
+
     // Make sure we rerun the build script when resources, cargo.toml, or git head changes
     println!("cargo:rerun-if-changed=resources/resources.rc.template");
     println!("cargo:rerun-if-changed=Cargo.toml");
     println!("cargo:rerun-if-changed=.git/HEAD");
+    println!("cargo:rerun-if-changed=src/bin/test_helper.rs");
 }

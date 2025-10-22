@@ -9,6 +9,9 @@ use strings::to_utf16;
 use windows_sys::core::PCWSTR;
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
 
+// Custom message types for progress window communication
+const WM_UPDATE_STATUS: u32 = 0x0400 + 1; // WM_USER + 1
+
 extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: PCWSTR) -> BOOL;
 	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
@@ -19,6 +22,8 @@ struct DialogData {
 	tx: Sender<ProgressWindow>,
 	label: String,
 }
+
+static mut DIALOG_HWND: HWND = 0;
 
 unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) -> isize {
 	use resources;
@@ -65,6 +70,9 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 				EndDialog(hwnd, 0);
 			}
 
+			// Store dialog handle for status updates
+			DIALOG_HWND = hwnd;
+
 			data.tx
 				.send(ProgressWindow {
 					ui_thread_id: GetCurrentThreadId(),
@@ -74,8 +82,15 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is updating...").as_ptr());
 			0
 		}
+		WM_UPDATE_STATUS => {
+			if l != 0 {
+				SetDlgItemTextW(hwnd, -1, l as *const u16);
+			}
+			0
+		}
 		WM_DESTROY => {
 			ShutdownBlockReasonDestroy(hwnd);
+			DIALOG_HWND = 0;
 			0
 		}
 		_ => 0,
@@ -92,6 +107,21 @@ impl ProgressWindow {
 
 		unsafe {
 			PostThreadMessageW(self.ui_thread_id, WM_QUIT, 0, 0);
+		}
+	}
+
+	pub fn update_status(&self, status: &str) {
+		use windows_sys::Win32::UI::WindowsAndMessaging::SendMessageW;
+		let status_utf16 = to_utf16(status);
+		unsafe {
+			if DIALOG_HWND != 0 {
+				SendMessageW(
+					DIALOG_HWND,
+					WM_UPDATE_STATUS,
+					0,
+					status_utf16.as_ptr() as LPARAM
+				);
+			}
 		}
 	}
 }

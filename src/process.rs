@@ -133,6 +133,11 @@ fn kill_process_if(
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
 
+		info!(
+			log,
+			"Found {} running {}, attempting to kill...", process_path.display(), path.display()
+		);
+
 		if process_path != path {
 			CloseHandle(handle);
 			return Ok(());
@@ -157,6 +162,33 @@ fn kill_process_if(
 	}
 }
 
+/**
+ * Checks if a process with the given PID is still running.
+ */
+fn is_process_running(pid: u32) -> bool {
+	use std::ffi::c_void;
+	use windows_sys::Win32::Foundation::CloseHandle;
+	use windows_sys::Win32::System::Threading::{
+		GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION,
+	};
+
+	const STILL_ACTIVE: u32 = 259;
+
+	unsafe {
+		let handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
+
+		if ptr::eq(handle as *mut c_void, ptr::null()) {
+			return false;
+		}
+
+		let mut exit_code = 0u32;
+		let result = GetExitCodeProcess(handle, &mut exit_code);
+		CloseHandle(handle);
+
+		result != 0 && exit_code == STILL_ACTIVE
+	}
+}
+
 pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error::Error>> {
 	let file_name = path
 		.file_name()
@@ -169,49 +201,80 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 		)
 	})?;
 
-	let mut attempt: u32 = 0;
+	// Get the initial list of processes that match our target
+	let target_processes: Vec<RunningProcess> = get_running_processes()?
+		.into_iter()
+		.filter(|p| p.name == file_name)
+		.collect();
 
-	// wait for 10 seconds until all processes are dead
+	if target_processes.is_empty() {
+		info!(log, "{} is not running", file_name);
+		return Ok(());
+	}
+
+	info!(
+		log,
+		"Found {} running {} processes: {:?}",
+		target_processes.len(),
+		file_name,
+		target_processes.iter().map(|p| p.id).collect::<Vec<_>>()
+	);
+
+	let mut attempt: u32 = 0;
+	let mut still_running: Vec<&RunningProcess>;
+
+	// wait for up to 30 seconds until all target processes are dead
 	loop {
 		attempt += 1;
 
 		info!(
 			log,
-			"Checking for running {} processes... (attempt {})", file_name, attempt
+			"Checking if {} processes are still running... (attempt {})", file_name, attempt
 		);
 
-		let process_found = get_running_processes()?
-			.into_iter()
-			.any(|p| p.name == file_name);
+		still_running = target_processes
+			.iter()
+			.filter(|p| is_process_running(p.id))
+			.collect();
 
-		if !process_found {
-			info!(log, "{} is not running", file_name);
+		if still_running.is_empty() {
+			info!(log, "All {} processes have exited", file_name);
 			break;
 		}
 
 		// give up after 60 * 500ms = 30 seconds
 		if attempt == 60 {
-			info!(log, "Gave up waiting for {} to exit", file_name);
+			info!(
+				log,
+				"Gave up waiting for {} to exit, {} processes still running: {:?}",
+				file_name,
+				still_running.len(),
+				still_running.iter().map(|p| p.id).collect::<Vec<_>>()
+			);
 			break;
 		}
 
-		info!(log, "{} is running, wait a bit", file_name);
+		info!(
+			log,
+			"{} processes still running: {:?}, waiting...",
+			still_running.len(),
+			still_running.iter().map(|p| p.id).collect::<Vec<_>>()
+		);
 		thread::sleep(time::Duration::from_millis(500));
 	}
 
-	// try to kill any running processes
+	// try to kill any running target processes
 	util::retry(
-		"attempting to kill any running Code.exe processes",
+		"attempting to kill any running processes",
 		|attempt| {
 			info!(
 				log,
-				"Checking for possible conflicting running processes... (attempt {})", attempt
+				"Attempting to kill remaining processes... (attempt {})", attempt
 			);
 
-			let kill_errors: Vec<_> = get_running_processes()?
-				.into_iter()
-				.filter(|p| p.name == file_name)
-				.filter_map(|p| kill_process_if(log, &p, path).err())
+			let kill_errors: Vec<_> = still_running
+				.iter()
+				.filter_map(|p| kill_process_if(log, p, path).err())
 				.collect();
 
 			for err in &kill_errors {
@@ -220,9 +283,108 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 
 			match kill_errors.len() {
 				0 => Ok(()),
-				_ => Err(kill_errors.into_iter().nth(1).unwrap()),
+				_ => Err(kill_errors.into_iter().nth(0).unwrap()),
 			}
 		},
 		None,
 	)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::path::PathBuf;
+	use std::process::{Command, Child};
+	use std::thread;
+	use std::time::Duration;
+	use slog::{Logger, o, Drain};
+	use slog_term::{TermDecorator, FullFormat};
+	use slog_async::Async;
+
+	fn setup_test_logger() -> Logger {
+		let decorator = TermDecorator::new().build();
+		let drain = FullFormat::new(decorator).build().fuse();
+		let drain = Async::new(drain).build().fuse();
+		Logger::root(drain, o!())
+	}
+
+	fn get_test_helper_path() -> PathBuf {
+		let profile = std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+		let target_dir = std::env::var("CARGO_TARGET_DIR").unwrap_or_else(|_| "target".to_string());
+		let target = std::env::var("TARGET").unwrap_or_else(|_| {
+			"i686-pc-windows-msvc".to_string()
+		});
+
+		// Resolve target_dir to absolute path relative to project root
+		let project_root = std::env::current_dir().expect("Failed to get current directory");
+		let absolute_target_dir = project_root.join(&target_dir);
+		absolute_target_dir
+			.join(&target)
+			.join(&profile)
+			.join("test_helper.exe")
+	}
+
+	fn start_test_process(args: &[&str]) -> Result<Child, std::io::Error> {
+		let test_helper = get_test_helper_path();
+		Command::new(&test_helper)
+			.args(args)
+			.spawn()
+	}
+
+	fn wait_for_process_start(expected_name: &str, timeout_ms: u64) -> bool {
+		let start = std::time::Instant::now();
+		while start.elapsed().as_millis() < timeout_ms as u128 {
+			if let Ok(processes) = get_running_processes() {
+				if processes.iter().any(|p| p.name == expected_name) {
+					return true;
+				}
+			}
+			thread::sleep(Duration::from_millis(10));
+		}
+		false
+	}
+
+	#[test]
+	fn test_wait_or_kill_no_processes_running() {
+		let log = setup_test_logger();
+		let fake_path = PathBuf::from("C:\\nonexistent\\fake_process.exe");
+		let result = wait_or_kill(&log, &fake_path);
+		assert!(result.is_ok(), "Should succeed when no processes are running");
+	}
+
+	#[test]
+	fn test_wait_or_kill_process_exits_naturally() {
+		let log = setup_test_logger();
+		let test_helper_path = get_test_helper_path();
+		let mut child = start_test_process(&["run-for-duration", "5"]).expect("Failed to start test process");
+		assert!(wait_for_process_start("test_helper.exe", 1000), "Test process should start and be visible");
+		let result = wait_or_kill(&log, &test_helper_path);
+		let _ = child.wait();
+		assert!(result.is_ok(), "Should succeed when process exits naturally");
+	}
+
+	#[test]
+	fn test_wait_or_kill_invalid_path() {
+		let log = setup_test_logger();
+		let path = PathBuf::from("");
+		let result = wait_or_kill(&log, &path);
+		assert!(result.is_err(), "Should fail with invalid path");
+		assert!(result.unwrap_err().to_string().contains("Could not get process file name"));
+	}
+
+	#[test]
+	fn test_wait_or_kill_multiple_processes() {
+		let log = setup_test_logger();
+		let test_helper = get_test_helper_path();
+		let mut child1 = start_test_process(&["run-forever"]).expect("Failed to start test process 1");
+		let mut child2 = start_test_process(&["run-forever"]).expect("Failed to start test process 2");
+		assert!(wait_for_process_start("test_helper.exe", 2000), "Test process should start and be visible");
+		let processes = get_running_processes().unwrap();
+		let test_helper_count = processes.iter().filter(|p| p.name == "test_helper.exe").count();
+		assert!(test_helper_count >= 2, "Should have at least 2 test helper processes running");
+		let result = wait_or_kill(&log, &test_helper);
+		let _ = child1.wait();
+		let _ = child2.wait();
+		assert!(result.is_ok(), "Should succeed when killing multiple processes");
+	}
 }
