@@ -597,41 +597,6 @@ fn handle_error(log_path: &str) {
 	gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::Error);
 }
 
-fn __main(args: &[String]) -> i32 {
-	let mut log_path = env::temp_dir();
-	log_path.push(format!(
-		"vscode-inno-updater-{:?}.log",
-		SystemTime::now()
-			.duration_since(SystemTime::UNIX_EPOCH)
-			.unwrap()
-			.as_secs()
-	));
-
-	let file = fs::OpenOptions::new()
-		.create(true)
-		.write(true)
-		.truncate(true)
-		.open(&log_path)
-		.unwrap();
-
-	let decorator = slog_term::PlainDecorator::new(file);
-	let drain = slog_term::FullFormat::new(decorator).build().fuse();
-	let drain = slog_async::Async::new(drain).build().fuse();
-	let log = slog::Logger::root(drain, o!());
-
-	match _main(&log, args) {
-		Ok(_) => {
-			info!(log, "Update was successful!");
-			0
-		}
-		Err(err) => {
-			error!(log, "{}", err);
-			handle_error(log_path.to_str().unwrap());
-			1
-		}
-	}
-}
-
 fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
 	let (header, recs) = read_file(path)?;
 
@@ -1040,13 +1005,14 @@ mod tests {
 
 fn main() {
 	let args: Vec<String> = env::args().collect();
-	let log_path = format!(
+	let mut log_path = env::temp_dir();
+	log_path.push(format!(
 		"vscode-inno-updater-{:?}.log",
 		SystemTime::now()
 			.duration_since(SystemTime::UNIX_EPOCH)
 			.unwrap()
 			.as_secs()
-	);
+	));
 
 	if args.len() == 3 && args[1] == "--parse" {
 		let path = PathBuf::from(&args[2]);
@@ -1155,25 +1121,46 @@ fn main() {
 		);
 
 		if result.is_err() {
-			handle_error(&log_path);
+			handle_error(log_path.to_str().unwrap());
 		}
 
 		window.exit();
 	} else if args.len() == 3 && args[1] == "--error" {
-		handle_error(&log_path);
+		handle_error(log_path.to_str().unwrap());
 	} else if args.len() == 2 && args[1] == "--crash" {
 		panic!("Simulated crash");
 	} else if args.len() == 2 && (args[1] == "--version" || args[1] == "-v") {
 		eprintln!("Inno Update v{}", VERSION);
 	} else {
 		let args: Vec<String> = args.into_iter().filter(|a| !a.starts_with("--")).collect();
+		let file = fs::OpenOptions::new()
+			.create(true)
+			.write(true)
+			.truncate(true)
+			.open(&log_path)
+			.unwrap();
+
+		let decorator = slog_term::PlainDecorator::new(file);
+		let drain = slog_term::FullFormat::new(decorator).build().fuse();
+		let drain = slog_async::Async::new(drain).build().fuse();
+		let log = slog::Logger::root(drain, o!());
 
 		if args.len() < 4 {
 			eprintln!("Inno Update v{}", VERSION);
 			eprintln!("Error: Bad usage");
 			std::process::exit(1);
 		} else {
-			std::process::exit(__main(&args));
+			match _main(&log, &args) {
+				Ok(_) => {
+					info!(log, "Update was successful!");
+					std::process::exit(0);
+				}
+				Err(err) => {
+					error!(log, "{}", err);
+					handle_error(log_path.to_str().unwrap());
+					std::process::exit(1);
+				}
+			}
 		}
 	}
 }
