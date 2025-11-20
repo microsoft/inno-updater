@@ -736,6 +736,11 @@ fn remove_files(
 				info!(log, "Skipping commit folder: {:?}", entry_path);
 				true
 			}
+			// Skip bootstrap folder
+			else if entry_name == "bootstrap" {
+				info!(log, "Skipping bootstrap folder: {:?}", entry_path);
+				true
+			}
 			else {
 				false
 			};
