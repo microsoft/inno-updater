@@ -674,6 +674,78 @@ fn perform_three_way_rename(
 	Ok(())
 }
 
+fn cleanup_uninstdat_after_gc(
+	log: &slog::Logger,
+	code_path: &Path,
+	deleted_paths: &HashSet<PathBuf>,
+) -> Result<(), Box<dyn error::Error>> {
+	let base_dir = code_path.parent().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent directory of code_path",
+		)
+	})?;
+
+	let mut uninstdat_path = PathBuf::from(base_dir);
+	uninstdat_path.push("unins000.dat");
+
+	if !uninstdat_path.exists() {
+		info!(log, "No unins000.dat file found, skipping cleanup");
+		return Ok(());
+	}
+
+	let (header, recs) = read_file(&uninstdat_path)?;
+	info!(log, "Original header: {:?}", header);
+	info!(log, "Original num_recs: {:?}", recs.len());
+
+	let before = recs.len();
+	let mut seen_paths: HashSet<String> = HashSet::new();
+	let cleaned_recs: Vec<FileRec> = recs
+		.into_iter()
+		.filter(|rec| {
+			if rec.typ != model::UninstallRecTyp::DeleteDirOrFiles
+				&& rec.typ != model::UninstallRecTyp::DeleteFile
+			{
+				return true;
+			}
+
+			match rec.get_paths() {
+				Ok(paths) => {
+					let was_deleted = paths.iter().any(|path_str| {
+						let path = Path::new(path_str);
+						deleted_paths.contains(path) || 
+							path.ancestors().skip(1).any(|ancestor| deleted_paths.contains(ancestor))
+					});
+
+					if was_deleted {
+						return false;
+					}
+
+					if paths.len() == 1 {
+						let path = &paths[0];
+						if seen_paths.contains(path) {
+							return false;
+						}
+						seen_paths.insert(path.clone());
+					}
+
+					true
+				}
+				Err(_) => false, // Skip records with invalid paths
+			}
+		})
+		.collect();
+
+	info!(log, "Total records removed: {}", before - cleaned_recs.len());
+
+	let header = header.clone_with_num_recs(cleaned_recs.len());
+	
+	info!(log, "Updating uninstall file {:?}", uninstdat_path);
+	write_file(&uninstdat_path, &header, cleaned_recs)?;
+
+	Ok(())
+}
+
 fn remove_files(
 	log: &slog::Logger,
 	code_path: &Path,
@@ -701,6 +773,7 @@ fn remove_files(
 
 	let mut directories_to_remove: LinkedList<PathBuf> = LinkedList::new();
 	let mut file_handles_to_remove: LinkedList<FileHandle> = LinkedList::new();
+	let mut deleted_paths: HashSet<PathBuf> = HashSet::new();
 
 	info!(log, "Reading top-level directory: {:?}", base_dir);
 
@@ -784,6 +857,7 @@ fn remove_files(
 								Some(16),
 							)?;
 
+							deleted_paths.insert(bin_entry_path.clone());
 							file_handles_to_remove.push_back(file_handle);
 						} else {
 							info!(log, "Skipping non-old file in bin: {:?}", bin_entry_path);
@@ -794,6 +868,7 @@ fn remove_files(
 				// Don't add bin directory itself to top_directories for deletion
 			} else {
 				// Delete other directories entirely
+				deleted_paths.insert(entry_path.clone());
 				directories_to_remove.push_back(entry_path.to_owned());
 			}
 		} else if entry_file_type.is_file() {
@@ -812,6 +887,7 @@ fn remove_files(
 				Some(16),
 			)?;
 
+			deleted_paths.insert(entry_path.clone());
 			file_handles_to_remove.push_back(file_handle);
 		}
 	}
@@ -860,6 +936,14 @@ fn remove_files(
 	}
 
 	info!(log, "File removal operation completed");
+	info!(log, "Total paths deleted: {}", deleted_paths.len());
+
+	if let Err(err) = cleanup_uninstdat_after_gc(log, code_path, &deleted_paths) {
+		info!(log, "Failed to cleanup unins000.dat after GC: {}", err);
+	} else {
+		info!(log, "Successfully cleaned up unins000.dat");
+	}
+
 	Ok(())
 }
 
