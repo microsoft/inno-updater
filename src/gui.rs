@@ -119,7 +119,7 @@ impl ProgressWindow {
 					DIALOG_HWND,
 					WM_UPDATE_STATUS,
 					0,
-					status_utf16.as_ptr() as LPARAM
+					status_utf16.as_ptr() as LPARAM,
 				);
 			}
 		}

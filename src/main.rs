@@ -11,9 +11,9 @@ extern crate crc;
 extern crate slog;
 extern crate slog_async;
 extern crate slog_term;
-extern crate windows_sys;
 #[cfg(test)]
 extern crate tempfile;
+extern crate windows_sys;
 
 mod blockio;
 mod gui;
@@ -397,7 +397,10 @@ fn update(
 
 	// 2) Get the basename and dirname of code_path
 	let dir_path = code_path.parent().ok_or_else(|| {
-		io::Error::new(io::ErrorKind::Other, "Could not get parent directory of code_path")
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent directory of code_path",
+		)
 	})?;
 
 	let basename = code_path.file_name().ok_or_else(|| {
@@ -413,8 +416,13 @@ fn update(
 	let old_exe_path = dir_path.join(&old_exe_filename);
 	let new_exe_path = dir_path.join(&new_exe_filename);
 
-	info!(log, "Starting rename process: code_path={:?}, old_exe_path={:?}, new_exe_path={:?}", 
-		code_path, old_exe_path, new_exe_path);
+	info!(
+		log,
+		"Starting rename process: code_path={:?}, old_exe_path={:?}, new_exe_path={:?}",
+		code_path,
+		old_exe_path,
+		new_exe_path
+	);
 
 	// 4) Check for the presence of new_exe_filename and proceed with renaming
 	if new_exe_path.exists() {
@@ -434,7 +442,8 @@ fn update(
 						let file_name_str = file_name.to_string_lossy();
 
 						// Skip files that already have old_ or new_ prefix
-						if !file_name_str.starts_with("old_") && !file_name_str.starts_with("new_") {
+						if !file_name_str.starts_with("old_") && !file_name_str.starts_with("new_")
+						{
 							bin_files.push(file_name.to_string_lossy().to_string());
 						}
 					}
@@ -458,7 +467,7 @@ fn update(
 						Ok(_) => {
 							// Track this file was successfully renamed
 							renamed_files.push(file_name);
-						},
+						}
 						Err(err) => {
 							error!(log, "Bin file update failed for {:?}: {}", file_name, err);
 							// Continue to next file, don't rollback everything yet
@@ -468,9 +477,16 @@ fn update(
 				}
 			}
 
-			info!(log, "Bin directory processing complete. Successfully renamed {} files", renamed_files.len());
+			info!(
+				log,
+				"Bin directory processing complete. Successfully renamed {} files",
+				renamed_files.len()
+			);
 		} else {
-			info!(log, "Bin directory does not exist, skipping bin file processing");
+			info!(
+				log,
+				"Bin directory does not exist, skipping bin file processing"
+			);
 		}
 
 		// Perform three-way rename for the main executable
@@ -493,7 +509,12 @@ fn update(
 		if new_manifest_path.exists() {
 			window.update_status("Renaming manifest file...");
 			info!(log, "Found new manifest file: {:?}", new_manifest_path);
-			if let Err(err) = perform_three_way_rename(log, &manifest_path, &old_manifest_path, &new_manifest_path) {
+			if let Err(err) = perform_three_way_rename(
+				log,
+				&manifest_path,
+				&old_manifest_path,
+				&new_manifest_path,
+			) {
 				error!(log, "Manifest file update failed: {}", err);
 			} else {
 				info!(log, "Successfully updated manifest file");
@@ -508,9 +529,15 @@ fn update(
 		// If a commit argument was provided, attempt to remove files not associated with that commit
 		if let Some(ref commit_str) = commit {
 			window.update_status("Cleaning up old files...");
-			info!(log, "Commit specified: {} - attempting to remove files", commit_str);
+			info!(
+				log,
+				"Commit specified: {} - attempting to remove files", commit_str
+			);
 			if let Err(err) = remove_files(log, code_path, commit_str) {
-				warn!(log, "Failed to remove files for commit {}: {}", commit_str, err);
+				warn!(
+					log,
+					"Failed to remove files for commit {}: {}", commit_str, err
+				);
 			} else {
 				info!(log, "Removed files for commit {}", commit_str);
 			}
@@ -519,7 +546,10 @@ fn update(
 		window.update_status("Update completed successfully!");
 		info!(log, "Update completed successfully");
 	} else {
-		info!(log, "New executable not found: {:?}, using traditional update method", new_exe_path);
+		info!(
+			log,
+			"New executable not found: {:?}, using traditional update method", new_exe_path
+		);
 		// Fall back to the original update method if no new executable is found
 		do_update(log, code_path, update_folder_name)?;
 	}
@@ -639,7 +669,10 @@ fn perform_three_way_rename(
 ) -> Result<(), Box<dyn error::Error>> {
 	// Step 1: If new file exists and current file exists, rename current to old
 	if new_path.exists() && current_path.exists() {
-		info!(log, "Renaming current to old: {:?} -> {:?}", current_path, old_path);
+		info!(
+			log,
+			"Renaming current to old: {:?} -> {:?}", current_path, old_path
+		);
 		if let Err(err) = fs::rename(current_path, old_path) {
 			error!(log, "Failed to rename current to old: {}", err);
 			return Err(Box::new(io::Error::new(
@@ -653,13 +686,22 @@ fn perform_three_way_rename(
 	}
 
 	// Step 2: Rename new to current
-	info!(log, "Renaming new to current: {:?} -> {:?}", new_path, current_path);
+	info!(
+		log,
+		"Renaming new to current: {:?} -> {:?}", new_path, current_path
+	);
 	if let Err(err) = fs::rename(new_path, current_path) {
-		error!(log, "Failed to rename new to current, attempting to restore old: {}", err);
+		error!(
+			log,
+			"Failed to rename new to current, attempting to restore old: {}", err
+		);
 
 		// Restore old file if the operation fails and old file exists
 		if old_path.exists() {
-			info!(log, "Restoring old file: {:?} -> {:?}", old_path, current_path);
+			info!(
+				log,
+				"Restoring old file: {:?} -> {:?}", old_path, current_path
+			);
 			if let Err(restore_err) = fs::rename(old_path, current_path) {
 				error!(log, "Failed to restore old file: {}", restore_err);
 			}
@@ -713,8 +755,11 @@ fn cleanup_uninstdat_after_gc(
 				Ok(paths) => {
 					let was_deleted = paths.iter().any(|path_str| {
 						let path = Path::new(path_str);
-						deleted_paths.contains(path) || 
-							path.ancestors().skip(1).any(|ancestor| deleted_paths.contains(ancestor))
+						deleted_paths.contains(path)
+							|| path
+								.ancestors()
+								.skip(1)
+								.any(|ancestor| deleted_paths.contains(ancestor))
 					});
 
 					if was_deleted {
@@ -736,10 +781,14 @@ fn cleanup_uninstdat_after_gc(
 		})
 		.collect();
 
-	info!(log, "Total records removed: {}", before - cleaned_recs.len());
+	info!(
+		log,
+		"Total records removed: {}",
+		before - cleaned_recs.len()
+	);
 
 	let header = header.clone_with_num_recs(cleaned_recs.len());
-	
+
 	info!(log, "Updating uninstall file {:?}", uninstdat_path);
 	write_file(&uninstdat_path, &header, cleaned_recs)?;
 
@@ -751,7 +800,10 @@ fn remove_files(
 	code_path: &Path,
 	commit_to_preserve: &str,
 ) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "remove_files: {:?}, commit: {}", code_path, commit_to_preserve);
+	info!(
+		log,
+		"remove_files: {:?}, commit: {}", code_path, commit_to_preserve
+	);
 
 	let base_dir = code_path.parent().ok_or_else(|| {
 		io::Error::new(
@@ -761,14 +813,13 @@ fn remove_files(
 	})?;
 
 	let code_basename = code_path.file_name().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get basename of code_path",
-		)
+		io::Error::new(io::ErrorKind::Other, "Could not get basename of code_path")
 	})?;
 
 	let code_basename_str = code_basename.to_string_lossy();
-	let basename_without_ext = code_basename_str.strip_suffix(".exe").unwrap_or(&code_basename_str);
+	let basename_without_ext = code_basename_str
+		.strip_suffix(".exe")
+		.unwrap_or(&code_basename_str);
 	let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
 
 	let mut directories_to_remove: LinkedList<PathBuf> = LinkedList::new();
@@ -788,35 +839,29 @@ fn remove_files(
 		let entry_file_type = entry.file_type()?;
 		let entry_path = entry.path();
 
-		let should_skip = 
+		let should_skip = if entry_path == code_path {
 			// Skip deleting code_path executable
-			if entry_path == code_path {
-				info!(log, "Skipping code_path executable: {:?}", entry_path);
-				true
-			}
+			info!(log, "Skipping code_path executable: {:?}", entry_path);
+			true
+		} else if entry_name == manifest_filename {
 			// Skip basename.VisualElementsManifest.xml
-			else if entry_name == manifest_filename {
-				info!(log, "Skipping VisualElementsManifest.xml: {:?}", entry_path);
-				true
-			}
+			info!(log, "Skipping VisualElementsManifest.xml: {:?}", entry_path);
+			true
+		} else if entry_name.starts_with("unins") {
 			// Skip files starting with "unins"
-			else if entry_name.starts_with("unins") {
-				info!(log, "Skipping unins file: {:?}", entry_path);
-				true
-			}
+			info!(log, "Skipping unins file: {:?}", entry_path);
+			true
+		} else if entry_name == commit_to_preserve && entry_file_type.is_dir() {
 			// Skip commit folder
-			else if entry_name == commit_to_preserve && entry_file_type.is_dir() {
-				info!(log, "Skipping commit folder: {:?}", entry_path);
-				true
-			}
+			info!(log, "Skipping commit folder: {:?}", entry_path);
+			true
+		} else if entry_name == "bootstrap" {
 			// Skip bootstrap folder
-			else if entry_name == "bootstrap" {
-				info!(log, "Skipping bootstrap folder: {:?}", entry_path);
-				true
-			}
-			else {
-				false
-			};
+			info!(log, "Skipping bootstrap folder: {:?}", entry_path);
+			true
+		} else {
+			false
+		};
 
 		if should_skip {
 			continue;
@@ -826,14 +871,14 @@ fn remove_files(
 			// Special handling for bin directory (Rule 3)
 			if entry_name == "bin" {
 				info!(log, "Processing bin directory: {:?}", entry_path);
-				
+
 				// Process files in bin directory
 				for bin_entry in fs::read_dir(&entry_path)? {
 					let bin_entry = bin_entry?;
 					let bin_entry_name = bin_entry.file_name();
-					let bin_entry_name = bin_entry_name
-						.to_str()
-						.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get bin entry name"))?;
+					let bin_entry_name = bin_entry_name.to_str().ok_or_else(|| {
+						io::Error::new(io::ErrorKind::Other, "Could not get bin entry name")
+					})?;
 
 					let bin_entry_file_type = bin_entry.file_type()?;
 					let bin_entry_path = bin_entry.path();
@@ -842,14 +887,16 @@ fn remove_files(
 					if bin_entry_file_type.is_file() {
 						if bin_entry_name.starts_with("old_") {
 							info!(log, "Will delete old file in bin: {:?}", bin_entry_path);
-							
+
 							let msg = format!("Opening file handle: {:?}", bin_entry_path);
 							let file_handle = util::retry(
 								&msg,
 								|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
 									info!(
 										log,
-										"Get file handle: {:?} (attempt {})", bin_entry_path, attempt
+										"Get file handle: {:?} (attempt {})",
+										bin_entry_path,
+										attempt
 									);
 
 									FileHandle::new(&bin_entry_path)
@@ -892,7 +939,10 @@ fn remove_files(
 		}
 	}
 
-	info!(log, "Collected all directories and file handles for removal");
+	info!(
+		log,
+		"Collected all directories and file handles for removal"
+	);
 
 	for file_handle in &file_handles_to_remove {
 		util::retry(
@@ -949,147 +999,185 @@ fn remove_files(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use std::fs;
-    use tempfile::tempdir;
-    use slog::{Logger, o};
-    use slog_term::{TermDecorator, FullFormat};
-    use slog_async::Async;
+	use super::*;
+	use slog::{o, Logger};
+	use slog_async::Async;
+	use slog_term::{FullFormat, TermDecorator};
+	use std::fs;
+	use tempfile::tempdir;
 
-    // Helper function to set up a test logger
-    fn setup_test_logger() -> Logger {
-        let decorator = TermDecorator::new().build();
-        let drain = FullFormat::new(decorator).build().fuse();
-        let drain = Async::new(drain).build().fuse();
-        Logger::root(drain, o!())
-    }
+	// Helper function to set up a test logger
+	fn setup_test_logger() -> Logger {
+		let decorator = TermDecorator::new().build();
+		let drain = FullFormat::new(decorator).build().fuse();
+		let drain = Async::new(drain).build().fuse();
+		Logger::root(drain, o!())
+	}
 
-    #[test]
-    fn test_perform_three_way_rename_basic() {
-        // Create a temporary directory for our test
-        let temp_dir = tempdir().unwrap();
-        let log = setup_test_logger();
+	#[test]
+	fn test_perform_three_way_rename_basic() {
+		// Create a temporary directory for our test
+		let temp_dir = tempdir().unwrap();
+		let log = setup_test_logger();
 
-        // Set up our test paths
-        let current_path = temp_dir.path().join("current.txt");
-        let old_path = temp_dir.path().join("old_current.txt");
-        let new_path = temp_dir.path().join("new_current.txt");
+		// Set up our test paths
+		let current_path = temp_dir.path().join("current.txt");
+		let old_path = temp_dir.path().join("old_current.txt");
+		let new_path = temp_dir.path().join("new_current.txt");
 
-        // Create test files
-        fs::write(&current_path, "current content").unwrap();
-        fs::write(&new_path, "new content").unwrap();
+		// Create test files
+		fs::write(&current_path, "current content").unwrap();
+		fs::write(&new_path, "new content").unwrap();
 
-        // Perform the rename operation
-        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+		// Perform the rename operation
+		let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
 
-        // Verify results
-        assert!(result.is_ok(), "Rename operation should succeed");
-        assert!(current_path.exists(), "Current file should exist");
-        assert!(!new_path.exists(), "New file should be renamed");
-        assert!(old_path.exists(), "Old file should exist");
+		// Verify results
+		assert!(result.is_ok(), "Rename operation should succeed");
+		assert!(current_path.exists(), "Current file should exist");
+		assert!(!new_path.exists(), "New file should be renamed");
+		assert!(old_path.exists(), "Old file should exist");
 
-        // Verify content
-        let current_content = fs::read_to_string(&current_path).unwrap();
-        let old_content = fs::read_to_string(&old_path).unwrap();
-        assert_eq!(current_content, "new content", "Current file should contain new content");
-        assert_eq!(old_content, "current content", "Old file should contain original content");
-    }
+		// Verify content
+		let current_content = fs::read_to_string(&current_path).unwrap();
+		let old_content = fs::read_to_string(&old_path).unwrap();
+		assert_eq!(
+			current_content, "new content",
+			"Current file should contain new content"
+		);
+		assert_eq!(
+			old_content, "current content",
+			"Old file should contain original content"
+		);
+	}
 
-    #[test]
-    fn test_perform_three_way_rename_no_current_file() {
-        let temp_dir = tempdir().unwrap();
-        let log = setup_test_logger();
+	#[test]
+	fn test_perform_three_way_rename_no_current_file() {
+		let temp_dir = tempdir().unwrap();
+		let log = setup_test_logger();
 
-        let current_path = temp_dir.path().join("current.txt");
-        let old_path = temp_dir.path().join("old_current.txt");
-        let new_path = temp_dir.path().join("new_current.txt");
+		let current_path = temp_dir.path().join("current.txt");
+		let old_path = temp_dir.path().join("old_current.txt");
+		let new_path = temp_dir.path().join("new_current.txt");
 
-        // Only create the new file (no current file)
-        fs::write(&new_path, "new content").unwrap();
+		// Only create the new file (no current file)
+		fs::write(&new_path, "new content").unwrap();
 
-        // Perform the rename operation
-        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+		// Perform the rename operation
+		let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
 
-        // Verify results
-        assert!(result.is_ok(), "Rename operation should succeed even without current file");
-        assert!(current_path.exists(), "Current file should exist after rename");
-        assert!(!new_path.exists(), "New file should be renamed");
-        assert!(!old_path.exists(), "Old file should not exist as there was no current file");
+		// Verify results
+		assert!(
+			result.is_ok(),
+			"Rename operation should succeed even without current file"
+		);
+		assert!(
+			current_path.exists(),
+			"Current file should exist after rename"
+		);
+		assert!(!new_path.exists(), "New file should be renamed");
+		assert!(
+			!old_path.exists(),
+			"Old file should not exist as there was no current file"
+		);
 
-        // Verify content
-        let current_content = fs::read_to_string(&current_path).unwrap();
-        assert_eq!(current_content, "new content", "Current file should contain new content");
-    }
+		// Verify content
+		let current_content = fs::read_to_string(&current_path).unwrap();
+		assert_eq!(
+			current_content, "new content",
+			"Current file should contain new content"
+		);
+	}
 
-    #[test]
-    fn test_perform_three_way_rename_no_new_file() {
-        let temp_dir = tempdir().unwrap();
-        let log = setup_test_logger();
+	#[test]
+	fn test_perform_three_way_rename_no_new_file() {
+		let temp_dir = tempdir().unwrap();
+		let log = setup_test_logger();
 
-        let current_path = temp_dir.path().join("current.txt");
-        let old_path = temp_dir.path().join("old_current.txt");
-        let new_path = temp_dir.path().join("new_current.txt");
+		let current_path = temp_dir.path().join("current.txt");
+		let old_path = temp_dir.path().join("old_current.txt");
+		let new_path = temp_dir.path().join("new_current.txt");
 
-        // Only create the current file (no new file)
-        fs::write(&current_path, "current content").unwrap();
+		// Only create the current file (no new file)
+		fs::write(&current_path, "current content").unwrap();
 
-        // Perform the rename operation
-        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+		// Perform the rename operation
+		let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
 
-        // Verify results
-        assert!(result.is_ok(), "Rename operation should return Ok when there's no new file");
-        assert!(current_path.exists(), "Current file should still exist");
-        assert!(!old_path.exists(), "Old file should not exist as rename wasn't needed");
+		// Verify results
+		assert!(
+			result.is_ok(),
+			"Rename operation should return Ok when there's no new file"
+		);
+		assert!(current_path.exists(), "Current file should still exist");
+		assert!(
+			!old_path.exists(),
+			"Old file should not exist as rename wasn't needed"
+		);
 
-        // Verify content is unchanged
-        let current_content = fs::read_to_string(&current_path).unwrap();
-        assert_eq!(current_content, "current content", "Current file should be unchanged");
-    }
+		// Verify content is unchanged
+		let current_content = fs::read_to_string(&current_path).unwrap();
+		assert_eq!(
+			current_content, "current content",
+			"Current file should be unchanged"
+		);
+	}
 
-    #[test]
-    fn test_remove_files_basic() {
-        let temp_dir = tempdir().unwrap();
-        let log = setup_test_logger();
-        let base_dir = temp_dir.path();
+	#[test]
+	fn test_remove_files_basic() {
+		let temp_dir = tempdir().unwrap();
+		let log = setup_test_logger();
+		let base_dir = temp_dir.path();
 
-        // Create test structure
-        let code_path = base_dir.join("code.exe");
-        let manifest_path = base_dir.join("code.VisualElementsManifest.xml");
-        let commit_dir = base_dir.join("abc123");
-        let bin_dir = base_dir.join("bin");
-        let unins_file = base_dir.join("unins000.dat");
-        let some_file = base_dir.join("somefile.txt");
+		// Create test structure
+		let code_path = base_dir.join("code.exe");
+		let manifest_path = base_dir.join("code.VisualElementsManifest.xml");
+		let commit_dir = base_dir.join("abc123");
+		let bin_dir = base_dir.join("bin");
+		let unins_file = base_dir.join("unins000.dat");
+		let some_file = base_dir.join("somefile.txt");
 		let other_dir = base_dir.join("otherdir");
 
-        // Create files and directories
-        fs::write(&code_path, "executable content").unwrap();
-        fs::write(&manifest_path, "manifest content").unwrap();
-        fs::create_dir(&commit_dir).unwrap();
-        fs::write(commit_dir.join("commit_file.txt"), "commit content").unwrap();
-        fs::create_dir(&bin_dir).unwrap();
-        fs::write(bin_dir.join("old_binary.exe"), "old binary").unwrap();
-        fs::write(bin_dir.join("new_binary.exe"), "new binary").unwrap();
-        fs::write(&unins_file, "uninstall data").unwrap();
-        fs::write(&some_file, "some file content").unwrap();
+		// Create files and directories
+		fs::write(&code_path, "executable content").unwrap();
+		fs::write(&manifest_path, "manifest content").unwrap();
+		fs::create_dir(&commit_dir).unwrap();
+		fs::write(commit_dir.join("commit_file.txt"), "commit content").unwrap();
+		fs::create_dir(&bin_dir).unwrap();
+		fs::write(bin_dir.join("old_binary.exe"), "old binary").unwrap();
+		fs::write(bin_dir.join("new_binary.exe"), "new binary").unwrap();
+		fs::write(&unins_file, "uninstall data").unwrap();
+		fs::write(&some_file, "some file content").unwrap();
 		fs::create_dir(&other_dir).unwrap();
-        fs::write(other_dir.join("other_file.txt"), "other content").unwrap();
+		fs::write(other_dir.join("other_file.txt"), "other content").unwrap();
 
-        // Perform the remove operation
-        let result = remove_files(&log, &code_path, "abc123");
+		// Perform the remove operation
+		let result = remove_files(&log, &code_path, "abc123");
 
-        assert!(result.is_ok(), "Remove operation should succeed");
-        assert!(code_path.exists(), "Code executable should be preserved");
-        assert!(manifest_path.exists(), "VisualElementsManifest.xml should be preserved");
-        assert!(commit_dir.exists(), "Commit directory should be preserved");
-        assert!(commit_dir.join("commit_file.txt").exists(), "Files in commit dir should be preserved");
-        assert!(unins_file.exists(), "Unins files should be preserved");
-		assert!(bin_dir.join("new_binary.exe").exists(), "Non-old files in bin should be preserved");
+		assert!(result.is_ok(), "Remove operation should succeed");
+		assert!(code_path.exists(), "Code executable should be preserved");
+		assert!(
+			manifest_path.exists(),
+			"VisualElementsManifest.xml should be preserved"
+		);
+		assert!(commit_dir.exists(), "Commit directory should be preserved");
+		assert!(
+			commit_dir.join("commit_file.txt").exists(),
+			"Files in commit dir should be preserved"
+		);
+		assert!(unins_file.exists(), "Unins files should be preserved");
+		assert!(
+			bin_dir.join("new_binary.exe").exists(),
+			"Non-old files in bin should be preserved"
+		);
 
-
-        assert!(!some_file.exists(), "Random files should be deleted");
-        assert!(!bin_dir.join("old_binary.exe").exists(), "Old files in bin should be deleted");
+		assert!(!some_file.exists(), "Random files should be deleted");
+		assert!(
+			!bin_dir.join("old_binary.exe").exists(),
+			"Old files in bin should be deleted"
+		);
 		assert!(!other_dir.exists(), "Other directories should be deleted");
-    }
+	}
 }
 
 fn main() {
@@ -1114,7 +1202,10 @@ fn main() {
 		let commit_to_preserve = &args[3];
 
 		if !code_path.is_absolute() {
-			eprintln!("Error: Code path needs to be absolute. Instead got: {}", args[2]);
+			eprintln!(
+				"Error: Code path needs to be absolute. Instead got: {}",
+				args[2]
+			);
 			std::process::exit(1);
 		}
 
@@ -1137,7 +1228,9 @@ fn main() {
 
 		info!(
 			log,
-			"Removing files from base directory of {:?}, preserving commit folder: {}", code_path, commit_to_preserve
+			"Removing files from base directory of {:?}, preserving commit folder: {}",
+			code_path,
+			commit_to_preserve
 		);
 
 		remove_files(&log, &code_path, commit_to_preserve).unwrap_or_else(|err| {
