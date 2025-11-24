@@ -514,6 +514,14 @@ fn update(
 			} else {
 				info!(log, "Removed files for commit {}", commit_str);
 			}
+		} else {
+			// Clean up DLL files if transitioning from old layout to new layout
+			// as part of rename so that DLL doesn't get injected into the new
+			// application launch.
+			window.update_status("Cleaning up DLL files...");
+			if let Err(err) = cleanup_dll_files(log, code_path) {
+				warn!(log, "Failed to cleanup DLL files: {}", err);
+			}
 		}
 
 		window.update_status("Update completed successfully!");
@@ -671,6 +679,90 @@ fn perform_three_way_rename(
 		)));
 	}
 
+	Ok(())
+}
+
+fn cleanup_dll_files(
+	log: &slog::Logger,
+	code_path: &Path,
+) -> Result<(), Box<dyn error::Error>> {
+	info!(log, "cleanup_dll_files: {:?}", code_path);
+
+	let dir_path = code_path.parent().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent directory of code_path",
+		)
+	})?;
+
+	// Check for ffmpeg.dll
+	let ffmpeg_path = dir_path.join("ffmpeg.dll");
+	if !ffmpeg_path.exists() {
+		info!(log, "ffmpeg.dll not found, skipping DLL cleanup");
+		return Ok(());
+	}
+
+	info!(log, "ffmpeg.dll found at {:?}, removing all DLL files from directory", ffmpeg_path);
+
+	let mut file_handles_to_remove: LinkedList<FileHandle> = LinkedList::new();
+
+	// Scan directory for DLL files
+	for entry in fs::read_dir(dir_path)? {
+		let entry = entry?;
+		let entry_path = entry.path();
+		let entry_file_type = entry.file_type()?;
+
+		if entry_file_type.is_file() {
+			if let Some(extension) = entry_path.extension() {
+				if extension.eq_ignore_ascii_case("dll") {
+					info!(log, "Found DLL file to remove: {:?}", entry_path);
+
+					let msg = format!("Opening file handle: {:?}", entry_path);
+					let file_handle = util::retry(
+						&msg,
+						|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
+							info!(
+								log,
+								"Get file handle: {:?} (attempt {})", entry_path, attempt
+							);
+
+							FileHandle::new(&entry_path)
+						},
+						Some(16),
+					)?;
+
+					file_handles_to_remove.push_back(file_handle);
+				}
+			}
+		}
+	}
+
+	if file_handles_to_remove.is_empty() {
+		info!(log, "No DLL files found to remove");
+		return Ok(());
+	}
+
+	info!(log, "Collected {} DLL file handles for removal", file_handles_to_remove.len());
+
+	for file_handle in &file_handles_to_remove {
+		util::retry(
+			"marking a DLL file for deletion",
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.mark_for_deletion() },
+			None,
+		)?;
+	}
+
+	info!(log, "All DLL file handles marked for deletion");
+
+	for file_handle in &file_handles_to_remove {
+		util::retry(
+			"closing a DLL file handle",
+			|_| -> Result<(), Box<dyn error::Error>> { file_handle.close() },
+			None,
+		)?;
+	}
+
+	info!(log, "All DLL files deleted");
 	Ok(())
 }
 
@@ -1005,6 +1097,86 @@ mod tests {
         assert!(!some_file.exists(), "Random files should be deleted");
         assert!(!bin_dir.join("old_binary.exe").exists(), "Old files in bin should be deleted");
 		assert!(!other_dir.exists(), "Other directories should be deleted");
+    }
+
+    #[test]
+    fn test_cleanup_dll_files_with_ffmpeg() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        // Create test structure
+        let code_path = base_dir.join("code.exe");
+        let ffmpeg_dll = base_dir.join("ffmpeg.dll");
+        let libcrypto_dll = base_dir.join("libcrypto.dll");
+        let libssl_dll = base_dir.join("libssl.dll");
+        let some_txt_file = base_dir.join("readme.txt");
+
+        // Create files
+        fs::write(&code_path, "executable content").unwrap();
+        fs::write(&ffmpeg_dll, "ffmpeg library").unwrap();
+        fs::write(&libcrypto_dll, "crypto library").unwrap();
+        fs::write(&libssl_dll, "ssl library").unwrap();
+        fs::write(&some_txt_file, "readme content").unwrap();
+
+        // Perform cleanup
+        let result = cleanup_dll_files(&log, &code_path);
+
+        assert!(result.is_ok(), "Cleanup operation should succeed");
+        assert!(code_path.exists(), "Code executable should be preserved");
+        assert!(some_txt_file.exists(), "Non-DLL files should be preserved");
+        assert!(!ffmpeg_dll.exists(), "ffmpeg.dll should be deleted");
+        assert!(!libcrypto_dll.exists(), "libcrypto.dll should be deleted");
+        assert!(!libssl_dll.exists(), "libssl.dll should be deleted");
+    }
+
+    #[test]
+    fn test_cleanup_dll_files_without_ffmpeg() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        // Create test structure without ffmpeg.dll
+        let code_path = base_dir.join("code.exe");
+        let some_dll = base_dir.join("somelibrary.dll");
+
+        // Create files
+        fs::write(&code_path, "executable content").unwrap();
+        fs::write(&some_dll, "some library").unwrap();
+
+        // Perform cleanup
+        let result = cleanup_dll_files(&log, &code_path);
+
+        assert!(result.is_ok(), "Cleanup operation should succeed");
+        assert!(code_path.exists(), "Code executable should be preserved");
+        assert!(some_dll.exists(), "DLL files should be preserved when ffmpeg.dll is not present");
+    }
+
+    #[test]
+    fn test_cleanup_dll_files_case_insensitive() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        // Create test structure with mixed case DLL extensions
+        let code_path = base_dir.join("code.exe");
+        let ffmpeg_dll = base_dir.join("ffmpeg.dll");
+        let upper_dll = base_dir.join("LIBRARY.DLL");
+        let mixed_dll = base_dir.join("another.Dll");
+
+        // Create files
+        fs::write(&code_path, "executable content").unwrap();
+        fs::write(&ffmpeg_dll, "ffmpeg library").unwrap();
+        fs::write(&upper_dll, "upper case dll").unwrap();
+        fs::write(&mixed_dll, "mixed case dll").unwrap();
+
+        // Perform cleanup
+        let result = cleanup_dll_files(&log, &code_path);
+
+        assert!(result.is_ok(), "Cleanup operation should succeed");
+        assert!(!ffmpeg_dll.exists(), "ffmpeg.dll should be deleted");
+        assert!(!upper_dll.exists(), "LIBRARY.DLL should be deleted (case insensitive)");
+        assert!(!mixed_dll.exists(), "another.Dll should be deleted (case insensitive)");
     }
 }
 
