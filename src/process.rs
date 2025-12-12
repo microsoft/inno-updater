@@ -83,7 +83,7 @@ fn kill_process_if(
 	process: &RunningProcess,
 	path: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
-	use windows_sys::Win32::Foundation::{CloseHandle, MAX_PATH};
+	use windows_sys::Win32::Foundation::{CloseHandle, MAX_PATH, ERROR_ACCESS_DENIED, GetLastError};
 	use windows_sys::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 	use windows_sys::Win32::System::Threading::{
 		OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
@@ -103,16 +103,26 @@ fn kill_process_if(
 			process.id,
 		);
 
-		if ptr::eq(handle as *mut c_void, ptr::null()) {
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				format!(
-					"Failed to open process: {}",
-					util::get_last_error_message()?
-				),
-			)
-			.into());
-		}
+	        if ptr::eq(handle as *mut c_void, ptr::null_mut()) {
+	            let error_code = GetLastError();
+	
+	            // Check for insufficient permission
+	            if error_code == ERROR_ACCESS_DENIED {
+	                info!(
+	                    log,
+	                    "Insufficient permissions to open process: {}", process.id
+	                );
+	                return Ok(()); // Ignore the error and return Ok
+	            } else {
+	                return Err(io::Error::new(
+	                    io::ErrorKind::Other,
+	                    format!(
+	                        "Failed to open process: {}",
+	                        util::get_last_error_message()?
+	                    ),
+	                ).into());
+	            }
+	        }
 
 		let mut raw_path = [0u16; MAX_PATH as usize];
 		let len = K32GetModuleFileNameExW(handle, mem::zeroed(), raw_path.as_mut_ptr(), MAX_PATH)
