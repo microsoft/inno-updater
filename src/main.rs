@@ -502,6 +502,31 @@ fn update(
 			info!(log, "No new manifest file found: {:?}", new_manifest_path);
 		}
 
+		// Also perform three-way rename for the proxy executable
+		let flavor = if let Some(dash_pos) = basename_without_ext.find(" - ") {
+			&basename_without_ext[dash_pos..]
+		} else {
+			""
+		};
+		let proxy_filename = format!("Sessions{}.exe", flavor);
+		let proxy_path = dir_path.join(&proxy_filename);
+		let old_proxy_filename = format!("old_{}", proxy_filename);
+		let new_proxy_filename = format!("new_{}", proxy_filename);
+		let old_proxy_path = dir_path.join(&old_proxy_filename);
+		let new_proxy_path = dir_path.join(&new_proxy_filename);
+
+		if new_proxy_path.exists() {
+			window.update_status("Renaming proxy executable...");
+			info!(log, "Found new proxy executable: {:?}", new_proxy_path);
+			if let Err(err) = perform_three_way_rename(log, &proxy_path, &old_proxy_path, &new_proxy_path) {
+				error!(log, "Proxy executable update failed: {}", err);
+			} else {
+				info!(log, "Successfully updated proxy executable");
+			}
+		} else {
+			info!(log, "No new proxy executable found: {:?}", new_proxy_path);
+		}
+
 		window.update_status("Attempting to stop current running application...");
 		process::wait_or_kill(log, code_path)?;
 
@@ -790,6 +815,12 @@ fn remove_files(
 	let code_basename_str = code_basename.to_string_lossy();
 	let basename_without_ext = code_basename_str.strip_suffix(".exe").unwrap_or(&code_basename_str);
 	let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
+	let flavor = if let Some(dash_pos) = basename_without_ext.find(" - ") {
+		&basename_without_ext[dash_pos..]
+	} else {
+		""
+	};
+	let proxy_filename = format!("Sessions{}.exe", flavor);
 
 	let mut directories_to_remove: LinkedList<PathBuf> = LinkedList::new();
 	let mut file_handles_to_remove: LinkedList<FileHandle> = LinkedList::new();
@@ -816,6 +847,11 @@ fn remove_files(
 			// Skip basename.VisualElementsManifest.xml
 			else if entry_name == manifest_filename {
 				info!(log, "Skipping VisualElementsManifest.xml: {:?}", entry_path);
+				true
+			}
+			// Skip proxy executable
+			else if entry_name == proxy_filename {
+				info!(log, "Skipping proxy executable: {:?}", entry_path);
 				true
 			}
 			// Skip files starting with "unins"
@@ -1061,8 +1097,9 @@ mod tests {
         let base_dir = temp_dir.path();
 
         // Create test structure
-        let code_path = base_dir.join("code.exe");
-        let manifest_path = base_dir.join("code.VisualElementsManifest.xml");
+        let code_path = base_dir.join("Code.exe");
+        let manifest_path = base_dir.join("Code.VisualElementsManifest.xml");
+        let proxy_path = base_dir.join("Sessions.exe");
         let commit_dir = base_dir.join("abc123");
         let bin_dir = base_dir.join("bin");
         let unins_file = base_dir.join("unins000.dat");
@@ -1072,6 +1109,7 @@ mod tests {
         // Create files and directories
         fs::write(&code_path, "executable content").unwrap();
         fs::write(&manifest_path, "manifest content").unwrap();
+        fs::write(&proxy_path, "proxy executable content").unwrap();
         fs::create_dir(&commit_dir).unwrap();
         fs::write(commit_dir.join("commit_file.txt"), "commit content").unwrap();
         fs::create_dir(&bin_dir).unwrap();
@@ -1088,6 +1126,7 @@ mod tests {
         assert!(result.is_ok(), "Remove operation should succeed");
         assert!(code_path.exists(), "Code executable should be preserved");
         assert!(manifest_path.exists(), "VisualElementsManifest.xml should be preserved");
+        assert!(proxy_path.exists(), "Sessions.exe proxy should be preserved");
         assert!(commit_dir.exists(), "Commit directory should be preserved");
         assert!(commit_dir.join("commit_file.txt").exists(), "Files in commit dir should be preserved");
         assert!(unins_file.exists(), "Unins files should be preserved");
@@ -1097,6 +1136,39 @@ mod tests {
         assert!(!some_file.exists(), "Random files should be deleted");
         assert!(!bin_dir.join("old_binary.exe").exists(), "Old files in bin should be deleted");
 		assert!(!other_dir.exists(), "Other directories should be deleted");
+    }
+
+    #[test]
+    fn test_remove_files_insiders_with_proxy() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        // Create test structure for Insiders flavor
+        let code_path = base_dir.join("Code - Insiders.exe");
+        let manifest_path = base_dir.join("Code - Insiders.VisualElementsManifest.xml");
+        let proxy_path = base_dir.join("Sessions - Insiders.exe");
+        let commit_dir = base_dir.join("abc123");
+        let some_file = base_dir.join("somefile.txt");
+
+        // Create files and directories
+        fs::write(&code_path, "executable content").unwrap();
+        fs::write(&manifest_path, "manifest content").unwrap();
+        fs::write(&proxy_path, "proxy executable content").unwrap();
+        fs::create_dir(&commit_dir).unwrap();
+        fs::write(commit_dir.join("commit_file.txt"), "commit content").unwrap();
+        fs::write(&some_file, "some file content").unwrap();
+
+        // Perform the remove operation
+        let result = remove_files(&log, &code_path, "abc123");
+
+        assert!(result.is_ok(), "Remove operation should succeed");
+        assert!(code_path.exists(), "Code - Insiders.exe should be preserved");
+        assert!(manifest_path.exists(), "Code - Insiders.VisualElementsManifest.xml should be preserved");
+        assert!(proxy_path.exists(), "Sessions - Insiders.exe proxy should be preserved");
+        assert!(commit_dir.exists(), "Commit directory should be preserved");
+
+        assert!(!some_file.exists(), "Random files should be deleted");
     }
 
     #[test]
