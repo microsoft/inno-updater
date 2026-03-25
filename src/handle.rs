@@ -6,8 +6,8 @@
 use std::ffi::c_void;
 use std::path::Path;
 use std::{error, io, ptr};
-use strings::to_u16s;
-use util;
+use crate::strings::to_u16s;
+use crate::util;
 use windows_sys::Win32::Foundation::HANDLE;
 
 pub struct FileHandle(HANDLE);
@@ -20,8 +20,9 @@ impl FileHandle {
 		};
 
 		unsafe {
+			let path_wide = to_u16s(path.as_os_str());
 			let handle = CreateFileW(
-				to_u16s(path.as_os_str()).as_ptr(),
+				path_wide.as_ptr(),
 				DELETE,
 				0,
 				ptr::null_mut(),
@@ -34,8 +35,9 @@ impl FileHandle {
 				return Err(io::Error::new(
 					io::ErrorKind::Other,
 					format!(
-						"Failed to create file handle: {}",
-						util::get_last_error_message()?
+						"Failed to create file handle: {}\nPath: \"{}\"",
+						util::get_last_error_message()?,
+						path.display()
 					),
 				)
 				.into());

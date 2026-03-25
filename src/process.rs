@@ -6,8 +6,9 @@
 use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::{error, io, mem, ptr, thread, time};
-use strings::from_utf16;
-use {slog, util};
+use crate::strings::from_utf16;
+use slog;
+use crate::util;
 
 pub struct RunningProcess {
 	pub name: String,

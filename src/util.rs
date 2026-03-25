@@ -3,9 +3,9 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use gui;
+use crate::gui;
 use std::{error, ptr, thread, time};
-use strings::from_utf16;
+use crate::strings::from_utf16;
 
 /// Quadratic backoff retry mechanism.
 ///
@@ -35,7 +35,7 @@ where
 					let msg = format!("There was an error while {}:\n\n{}\n\nPlease verify there are no Visual Studio Code processes still executing.", task, err);
 					let mb_result = gui::message_box(
 						&msg,
-						"Visual Studio Code",
+						"Visual Studio Code - Updater",
 						gui::MessageBoxType::RetryCancel,
 					);
 

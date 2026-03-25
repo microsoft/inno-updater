@@ -1,2 +1,13 @@
 [build]
 target = "i686-pc-windows-msvc"
+
+# Usage: cargo +nightly test --target x86_64-pc-windows-msvc --profile asan
+# Note: ASAN requires x86_64, not i686
+[profile.asan]
+inherits = "dev"
+opt-level = 0
+debug = true
+
+[profile.asan.package."*"]
+opt-level = 0
+debug = true

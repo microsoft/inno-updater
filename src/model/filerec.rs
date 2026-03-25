@@ -330,7 +330,7 @@ impl FileRec {
 		})
 	}
 
-	pub fn get_paths(&self) -> Result<Vec<String>, StringDecodeError> {
+	pub fn get_paths(&self) -> Result<Vec<String>, StringDecodeError<'_>> {
 		decode_strings(&self.data)
 	}
 }

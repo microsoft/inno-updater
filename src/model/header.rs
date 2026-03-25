@@ -8,7 +8,7 @@ use crc::{Crc, CRC_32_ISO_HDLC};
 use std::io::prelude::*;
 use std::string::String;
 use std::{error, fmt};
-use strings;
+use crate::strings;
 
 pub const CRC32: Crc<u32> = Crc::<u32>::new(&CRC_32_ISO_HDLC);
 

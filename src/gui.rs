@@ -5,14 +5,14 @@
 
 use std::sync::mpsc::Sender;
 use std::{mem, ptr};
-use strings::to_utf16;
+use crate::strings::to_utf16;
 use windows_sys::core::PCWSTR;
 use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, WPARAM};
 
 // Custom message types for progress window communication
 const WM_UPDATE_STATUS: u32 = 0x0400 + 1; // WM_USER + 1
 
-extern "system" {
+unsafe extern "system" {
 	pub fn ShutdownBlockReasonCreate(hWnd: HWND, pwszReason: PCWSTR) -> BOOL;
 	pub fn ShutdownBlockReasonDestroy(hWnd: HWND) -> BOOL;
 }
@@ -26,7 +26,7 @@ struct DialogData {
 static mut DIALOG_HWND: HWND = 0;
 
 unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) -> isize {
-	use resources;
+	use crate::resources;
 	use windows_sys::Win32::Foundation::RECT;
 	use windows_sys::Win32::System::Threading::GetCurrentThreadId;
 	use windows_sys::Win32::UI::WindowsAndMessaging::{
@@ -34,66 +34,69 @@ unsafe extern "system" fn dlgproc(hwnd: HWND, msg: u32, _: WPARAM, l: LPARAM) ->
 		SetWindowPos, HWND_TOPMOST, WM_DESTROY, WM_INITDIALOG, WM_USER,
 	};
 
-	match msg {
-		WM_INITDIALOG => {
-			let data = &*(l as *const DialogData);
-			if !data.silent {
-				SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, WM_USER + 10, 1, 0);
+	unsafe {
+		match msg {
+			WM_INITDIALOG => {
+				let data = &*(l as *const DialogData);
+				if !data.silent {
+					SendDlgItemMessageW(hwnd, resources::PROGRESS_SLIDER, WM_USER + 10, 1, 0);
 
-				// change the text of the dialog label
-				let updating_text: Vec<u16> = to_utf16(&data.label);
-				SetDlgItemTextW(hwnd, -1, updating_text.as_ptr());
+					// change the text of the dialog label
+					let updating_text: Vec<u16> = to_utf16(&data.label);
+					SetDlgItemTextW(hwnd, -1, updating_text.as_ptr());
 
-				let mut rect = RECT {
-					top: 0,
-					left: 0,
-					bottom: 0,
-					right: 0,
-				};
-				GetWindowRect(hwnd, &mut rect);
+					let mut rect = RECT {
+						top: 0,
+						left: 0,
+						bottom: 0,
+						right: 0,
+					};
+					GetWindowRect(hwnd, &mut rect);
 
-				let width = rect.right - rect.left;
-				let height = rect.bottom - rect.top;
+					let width = rect.right - rect.left;
+					let height = rect.bottom - rect.top;
 
-				GetWindowRect(GetDesktopWindow(), &mut rect);
+					GetWindowRect(GetDesktopWindow(), &mut rect);
 
-				SetWindowPos(
-					hwnd,
-					HWND_TOPMOST,
-					rect.right / 2 - width / 2,
-					rect.bottom / 2 - height / 2,
-					width,
-					height,
-					0,
-				);
-			} else {
-				EndDialog(hwnd, 0);
+					SetWindowPos(
+						hwnd,
+						HWND_TOPMOST,
+						rect.right / 2 - width / 2,
+						rect.bottom / 2 - height / 2,
+						width,
+						height,
+						0,
+					);
+				} else {
+					EndDialog(hwnd, 0);
+				}
+
+				// Store dialog handle for status updates
+				DIALOG_HWND = hwnd;
+
+				data.tx
+					.send(ProgressWindow {
+						ui_thread_id: GetCurrentThreadId(),
+					})
+					.unwrap();
+
+				let shutdown_reason = to_utf16("Visual Studio Code is updating...");
+				ShutdownBlockReasonCreate(hwnd, shutdown_reason.as_ptr());
+				0
 			}
-
-			// Store dialog handle for status updates
-			DIALOG_HWND = hwnd;
-
-			data.tx
-				.send(ProgressWindow {
-					ui_thread_id: GetCurrentThreadId(),
-				})
-				.unwrap();
-
-			ShutdownBlockReasonCreate(hwnd, to_utf16("Visual Studio Code is updating...").as_ptr());
-			0
-		}
-		WM_UPDATE_STATUS => {
-			if l != 0 {
-				SetDlgItemTextW(hwnd, -1, l as *const u16);
+			WM_UPDATE_STATUS => {
+				if l != 0 {
+					SetDlgItemTextW(hwnd, -1, l as *const u16);
+				}
+				0
 			}
-			0
+			WM_DESTROY => {
+				ShutdownBlockReasonDestroy(hwnd);
+				DIALOG_HWND = 0;
+				0
+			}
+			_ => 0,
 		}
-		WM_DESTROY => {
-			ShutdownBlockReasonDestroy(hwnd);
-			DIALOG_HWND = 0;
-			0
-		}
-		_ => 0,
 	}
 }
 
@@ -127,7 +130,7 @@ impl ProgressWindow {
 }
 
 pub fn run_progress_window(silent: bool, tx: Sender<ProgressWindow>, label: String) {
-	use resources;
+	use crate::resources;
 	use windows_sys::Win32::System::LibraryLoader::GetModuleHandleW;
 	use windows_sys::Win32::UI::WindowsAndMessaging::DialogBoxParamW;
 
@@ -171,11 +174,14 @@ pub fn message_box(text: &str, caption: &str, mbtype: MessageBoxType) -> Message
 
 	let result: i32;
 
+	let text_wide = to_utf16(text);
+	let caption_wide = to_utf16(caption);
+
 	unsafe {
 		result = MessageBoxW(
 			mem::zeroed(),
-			to_utf16(text).as_ptr(),
-			to_utf16(caption).as_ptr(),
+			text_wide.as_ptr(),
+			caption_wide.as_ptr(),
 			match mbtype {
 				MessageBoxType::Error => MB_ICONERROR | MB_SYSTEMMODAL,
 				MessageBoxType::RetryCancel => MB_RETRYCANCEL | MB_ICONERROR | MB_SYSTEMMODAL,

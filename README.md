@@ -13,6 +13,29 @@ Helper utility to enable background updates for VS Code in Windows
 
 ⭐️ To integrate a release of `inno-updater` in VS Code, simply extract the release archive to [`build/win32`](https://github.com/microsoft/vscode/tree/main/build/win32).
 
+## Development
+
+### AddressSanitizer (ASAN)
+
+**One-time setup:**
+
+```powershell
+.\scripts\test-asan.ps1 -Install
+```
+
+This installs:
+- Rust nightly toolchain with `x86_64-pc-windows-msvc` target
+- `rust-src` component for `-Zbuild-std`
+- C++ AddressSanitizer component via Visual Studio Installer
+
+**Running ASAN tests:**
+
+```powershell
+.\scripts\test-asan.ps1
+```
+
+Use `-Verbose` for detailed output.
+
 ## Contributing
 
 This project welcomes contributions and suggestions. Most contributions require you to agree to a
