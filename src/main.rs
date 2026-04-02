@@ -381,6 +381,7 @@ fn update(
 	silent: bool,
 	label: String,
 	commit: Option<String>,
+	proxy_exe_name: Option<String>,
 ) -> Result<(), Box<dyn error::Error>> {
 	info!(log, "Inno Updater v{}", VERSION);
 	info!(log, "Starting update, silent = {}", silent);
@@ -503,28 +504,24 @@ fn update(
 		}
 
 		// Also perform three-way rename for the proxy executable
-		let flavor = if let Some(dash_pos) = basename_without_ext.find(" - ") {
-			&basename_without_ext[dash_pos..]
-		} else {
-			""
-		};
-		let proxy_filename = format!("Sessions{}.exe", flavor);
-		let proxy_path = dir_path.join(&proxy_filename);
-		let old_proxy_filename = format!("old_{}", proxy_filename);
-		let new_proxy_filename = format!("new_{}", proxy_filename);
-		let old_proxy_path = dir_path.join(&old_proxy_filename);
-		let new_proxy_path = dir_path.join(&new_proxy_filename);
+		if let Some(ref proxy_filename) = proxy_exe_name.as_ref().filter(|s| !s.is_empty()) {
+			let proxy_path = dir_path.join(proxy_filename.as_str());
+			let old_proxy_path = dir_path.join(format!("old_{}", proxy_filename));
+			let new_proxy_path = dir_path.join(format!("new_{}", proxy_filename));
 
-		if new_proxy_path.exists() {
-			window.update_status("Renaming proxy executable...");
-			info!(log, "Found new proxy executable: {:?}", new_proxy_path);
-			if let Err(err) = perform_three_way_rename(log, &proxy_path, &old_proxy_path, &new_proxy_path) {
-				error!(log, "Proxy executable update failed: {}", err);
+			if new_proxy_path.exists() {
+				window.update_status("Renaming proxy executable...");
+				info!(log, "Found new proxy executable: {:?}", new_proxy_path);
+				if let Err(err) = perform_three_way_rename(log, &proxy_path, &old_proxy_path, &new_proxy_path) {
+					error!(log, "Proxy executable update failed: {}", err);
+				} else {
+					info!(log, "Successfully updated proxy executable");
+				}
 			} else {
-				info!(log, "Successfully updated proxy executable");
+				info!(log, "No new proxy executable found: {:?}", new_proxy_path);
 			}
 		} else {
-			info!(log, "No new proxy executable found: {:?}", new_proxy_path);
+			info!(log, "No proxy exe name provided, skipping proxy executable rename");
 		}
 
 		window.update_status("Attempting to stop current running application...");
@@ -534,7 +531,7 @@ fn update(
 		if let Some(ref commit_str) = commit {
 			window.update_status("Cleaning up old files...");
 			info!(log, "Commit specified: {} - attempting to remove files", commit_str);
-			if let Err(err) = remove_files(log, code_path, commit_str) {
+			if let Err(err) = remove_files(log, code_path, commit_str, None, proxy_exe_name.as_deref()) {
 				warn!(log, "Failed to remove files for commit {}: {}", commit_str, err);
 			} else {
 				info!(log, "Removed files for commit {}", commit_str);
@@ -609,14 +606,15 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 
 	let label = args[3].clone();
 
-	// optional commit arg in args[4]
-	let commit = if args.len() > 4 {
-		Some(args[4].clone())
+	// optional proxy exe name arg in args[4] (populated from product.json by the caller)
+	let proxy_exe_name = if args.len() > 4 {
+		let name = args[4].clone();
+		if name.is_empty() { None } else { Some(name) }
 	} else {
 		None
 	};
 
-	update(log, &code_path, "_", silent == "true", label, commit)
+	update(log, &code_path, "_", silent == "true", label, None, proxy_exe_name)
 }
 
 fn handle_error(log_path: &str) {
@@ -795,8 +793,11 @@ fn remove_files(
 	log: &slog::Logger,
 	code_path: &Path,
 	commit_to_preserve: &str,
+	main_exe_name: Option<&str>,
+	proxy_exe_name: Option<&str>,
 ) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "remove_files: {:?}, commit: {}", code_path, commit_to_preserve);
+	info!(log, "remove_files: {:?}, commit: {}, main_exe: {:?}, proxy_exe: {:?}",
+		code_path, commit_to_preserve, main_exe_name, proxy_exe_name);
 
 	let base_dir = code_path.parent().ok_or_else(|| {
 		io::Error::new(
@@ -815,12 +816,7 @@ fn remove_files(
 	let code_basename_str = code_basename.to_string_lossy();
 	let basename_without_ext = code_basename_str.strip_suffix(".exe").unwrap_or(&code_basename_str);
 	let manifest_filename = format!("{}.VisualElementsManifest.xml", basename_without_ext);
-	let flavor = if let Some(dash_pos) = basename_without_ext.find(" - ") {
-		&basename_without_ext[dash_pos..]
-	} else {
-		""
-	};
-	let proxy_filename = format!("Sessions{}.exe", flavor);
+	let proxy_filename: Option<&str> = proxy_exe_name.filter(|s| !s.is_empty());
 
 	let mut directories_to_remove: LinkedList<PathBuf> = LinkedList::new();
 	let mut file_handles_to_remove: LinkedList<FileHandle> = LinkedList::new();
@@ -850,7 +846,7 @@ fn remove_files(
 				true
 			}
 			// Skip proxy executable
-			else if entry_name == proxy_filename {
+			else if proxy_filename.map_or(false, |p| entry_name == p) {
 				info!(log, "Skipping proxy executable: {:?}", entry_path);
 				true
 			}
@@ -1121,7 +1117,7 @@ mod tests {
         fs::write(other_dir.join("other_file.txt"), "other content").unwrap();
 
         // Perform the remove operation
-        let result = remove_files(&log, &code_path, "abc123");
+        let result = remove_files(&log, &code_path, "abc123", None, Some("Sessions.exe"));
 
         assert!(result.is_ok(), "Remove operation should succeed");
         assert!(code_path.exists(), "Code executable should be preserved");
@@ -1160,7 +1156,7 @@ mod tests {
         fs::write(&some_file, "some file content").unwrap();
 
         // Perform the remove operation
-        let result = remove_files(&log, &code_path, "abc123");
+        let result = remove_files(&log, &code_path, "abc123", None, Some("Sessions - Insiders.exe"));
 
         assert!(result.is_ok(), "Remove operation should succeed");
         assert!(code_path.exists(), "Code - Insiders.exe should be preserved");
@@ -1269,9 +1265,11 @@ fn main() {
 			eprintln!("{}", err);
 			std::process::exit(1);
 		});
-	} else if args.len() == 4 && args[1] == "--gc" {
+	} else if args.len() >= 4 && args[1] == "--gc" {
 		let code_path = PathBuf::from(&args[2]);
 		let commit_to_preserve = &args[3];
+		let main_exe_name: Option<&str> = args.get(4).and_then(|s| if s.is_empty() { None } else { Some(s.as_str()) });
+		let proxy_exe_name: Option<&str> = args.get(5).and_then(|s| if s.is_empty() { None } else { Some(s.as_str()) });
 
 		if !code_path.is_absolute() {
 			eprintln!("Error: Code path needs to be absolute. Instead got: {}", args[2]);
@@ -1297,10 +1295,11 @@ fn main() {
 
 		info!(
 			log,
-			"Removing files from base directory of {:?}, preserving commit folder: {}", code_path, commit_to_preserve
+			"Removing files from base directory of {:?}, preserving commit folder: {}, main_exe: {:?}, proxy_exe: {:?}",
+			code_path, commit_to_preserve, main_exe_name, proxy_exe_name
 		);
 
-		remove_files(&log, &code_path, commit_to_preserve).unwrap_or_else(|err| {
+		remove_files(&log, &code_path, commit_to_preserve, main_exe_name, proxy_exe_name).unwrap_or_else(|err| {
 			eprintln!("Error during file removal: {}", err);
 			std::process::exit(1);
 		});
