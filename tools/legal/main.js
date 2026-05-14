@@ -4,7 +4,7 @@ const pall = require('p-all');
 const minimist = require('minimist');
 
 async function getCrateInfo(name) {
-	const { got } = await import('got');
+	const { default: got } = await import('got');
 	return await got(`https://crates.io/api/v1/crates/${name}`).json();
 }
 
