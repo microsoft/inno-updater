@@ -19,7 +19,6 @@ resources:
 extends:
   template: azure-pipelines/rust-package/pipeline.yml@templates
   parameters:
-    nodeVersion: 22
     binaryName: inno_updater
     signing: false
     apiScanTarget: i686-pc-windows-msvc
