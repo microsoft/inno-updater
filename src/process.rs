@@ -142,9 +142,24 @@ fn get_process_path(process_id: u32) -> io::Result<PathBuf> {
 fn paths_equal(left: &Path, right: &Path) -> bool {
 	use windows_sys::Win32::Globalization::{CSTR_EQUAL, CompareStringOrdinal};
 
-	let left = to_u16s(left.as_os_str());
-	let right = to_u16s(right.as_os_str());
-	unsafe { CompareStringOrdinal(left.as_ptr(), -1, right.as_ptr(), -1, 1) == CSTR_EQUAL as i32 }
+	let mut left = left.components();
+	let mut right = right.components();
+	loop {
+		match (left.next(), right.next()) {
+			(Some(left), Some(right)) => {
+				let left = to_u16s(left.as_os_str());
+				let right = to_u16s(right.as_os_str());
+				if unsafe {
+					CompareStringOrdinal(left.as_ptr(), -1, right.as_ptr(), -1, 1)
+						!= CSTR_EQUAL as i32
+				} {
+					return false;
+				}
+			}
+			(None, None) => return true,
+			_ => return false,
+		}
+	}
 }
 
 fn process_matches_target(
@@ -344,7 +359,7 @@ fn get_matching_processes(
 	let mut target_processes = Vec::new();
 	for process in get_running_processes()?
 		.into_iter()
-		.filter(|process| process.name.eq_ignore_ascii_case(&file_name))
+		.filter(|process| paths_equal(Path::new(&process.name), Path::new(file_name.as_ref())))
 	{
 		let handle = match open_process(process.id, PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE)
 		{
@@ -579,10 +594,38 @@ mod tests {
 	}
 
 	#[test]
-	fn test_paths_equal_ignores_case() {
+	fn test_paths_equal_uses_windows_path_semantics() {
 		assert!(paths_equal(
+			Path::new("C:\\Program Files\\Microsoft VS Code\\\\Code.exe"),
+			Path::new("c:/program files/microsoft vs code/CODE.EXE"),
+		));
+		assert!(!paths_equal(
 			Path::new("C:\\Program Files\\Microsoft VS Code\\Code.exe"),
-			Path::new("c:\\program files\\microsoft vs code\\CODE.EXE"),
+			Path::new("C:\\Program Files\\Microsoft VS Code Insiders\\Code.exe"),
+		));
+	}
+
+	#[test]
+	fn test_process_matches_target() {
+		let process = RunningProcess {
+			name: "Code.exe".to_string(),
+			id: 1,
+		};
+
+		assert!(process_matches_target(
+			&process,
+			Path::new("C:\\Program Files\\Microsoft VS Code\\old_Code.exe"),
+			Path::new("c:/program files/microsoft vs code/Code.exe"),
+		));
+		assert!(!process_matches_target(
+			&process,
+			Path::new("C:\\Program Files\\Other VS Code\\Code.exe"),
+			Path::new("C:\\Program Files\\Microsoft VS Code\\Code.exe"),
+		));
+		assert!(!process_matches_target(
+			&process,
+			Path::new("C:\\Program Files\\Microsoft VS Code\\Code.exe"),
+			Path::new("C:\\Program Files\\Microsoft VS Code"),
 		));
 	}
 
@@ -684,6 +727,19 @@ mod tests {
 			wait_for_process_path(other_child.id(), &other_test_helper, 1000),
 			"Test process should start and be visible"
 		);
+		assert!(
+			get_matching_processes(&log, &test_helper)
+				.expect("Failed to find target processes")
+				.is_empty(),
+			"Different installation should not match the target"
+		);
+		assert!(
+			get_matching_processes(&log, &other_test_helper)
+				.expect("Failed to find copied test process")
+				.iter()
+				.any(|process| process.process.id == other_child.id()),
+			"Copied test process should match its own installation"
+		);
 
 		let result = wait_or_kill_for_test(&log, &test_helper);
 		let other_status = other_child
@@ -720,6 +776,8 @@ mod tests {
 			"Test process should start and be visible"
 		);
 		std::fs::rename(&current_path, &old_path).expect("Failed to rename running executable");
+		std::fs::copy(&test_helper, &current_path)
+			.expect("Failed to install replacement executable");
 
 		let result = wait_or_kill_for_test(&log, &current_path);
 		let child_status = child.try_wait().expect("Failed to query test process");
