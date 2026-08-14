@@ -671,13 +671,24 @@ fn perform_three_way_rename(
 	// Step 1: If new file exists and current file exists, rename current to old
 	if new_path.exists() && current_path.exists() {
 		info!(log, "Renaming current to old: {:?} -> {:?}", current_path, old_path);
-		if let Err(err) = fs::rename(current_path, old_path) {
-			error!(log, "Failed to rename current to old: {}", err);
-			return Err(Box::new(io::Error::new(
-				io::ErrorKind::Other,
-				format!("Failed to rename current to old: {}", err),
-			)));
-		}
+		// Use retry logic to handle OS error 32 (file locked by another process).
+		// Child processes or lingering handles may temporarily hold a lock on the
+		// executable, so we retry with quadratic backoff to give them time to release.
+		util::retry(
+			&format!("renaming {:?} to {:?}", current_path, old_path),
+			|attempt| {
+				info!(log, "Attempting rename: {:?} -> {:?} (attempt {})", current_path, old_path, attempt);
+				fs::rename(current_path, old_path).map_err(|err| {
+					error!(log, "Failed to rename current to old: {} (attempt {})", err, attempt);
+					let boxed: Box<dyn error::Error> = Box::new(io::Error::new(
+						io::ErrorKind::Other,
+						format!("Failed to rename current to old: {}", err),
+					));
+					boxed
+				})
+			},
+			None,
+		)?;
 	} else if !new_path.exists() {
 		// No new file to rename, so nothing to do
 		return Ok(());
