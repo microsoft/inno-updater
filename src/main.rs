@@ -789,6 +789,17 @@ fn cleanup_dll_files(
 	Ok(())
 }
 
+fn is_skippable_lock_error(err: &io::Error) -> bool {
+	const ERROR_ACCESS_DENIED: i32 = 5;
+	const ERROR_SHARING_VIOLATION: i32 = 32;
+	const ERROR_LOCK_VIOLATION: i32 = 33;
+
+	matches!(
+		err.raw_os_error(),
+		Some(ERROR_ACCESS_DENIED) | Some(ERROR_SHARING_VIOLATION) | Some(ERROR_LOCK_VIOLATION)
+	)
+}
+
 fn remove_files(
 	log: &slog::Logger,
 	code_path: &Path,
@@ -976,8 +987,24 @@ fn remove_files(
 					"Delete directory recursively: {:?} (attempt {})", dir, attempt
 				);
 
-				fs::remove_dir_all(&dir)?;
-				Ok(())
+				match fs::remove_dir_all(&dir) {
+					Ok(()) => Ok(()),
+					// Directories selected for gc are disposable. When a file
+					// inside is locked or access-denied by an external process
+					// (e.g. the context menu DLL held by dllhost.exe), retrying
+					// cannot succeed.
+					// Skip it and let the next update's gc reclaim what remains.
+					// See https://github.com/microsoft/vscode/issues/294546.
+					Err(ref err) if is_skippable_lock_error(err) => {
+						warn!(
+							log,
+							"Skipping locked directory during gc, will retry on next update: {:?}: {}",
+							dir, err
+						);
+						Ok(())
+					}
+					Err(err) => Err(err.into()),
+				}
 			},
 			None,
 		)?;
@@ -1245,6 +1272,70 @@ mod tests {
         assert!(!ffmpeg_dll.exists(), "ffmpeg.dll should be deleted");
         assert!(!upper_dll.exists(), "LIBRARY.DLL should be deleted (case insensitive)");
         assert!(!mixed_dll.exists(), "another.Dll should be deleted (case insensitive)");
+    }
+
+    #[test]
+    fn test_is_skippable_lock_error() {
+        assert!(is_skippable_lock_error(&std::io::Error::from_raw_os_error(5)));
+        assert!(is_skippable_lock_error(&std::io::Error::from_raw_os_error(32)));
+        assert!(is_skippable_lock_error(&std::io::Error::from_raw_os_error(33)));
+
+        // Unrelated failures must still be treated as hard errors.
+        assert!(!is_skippable_lock_error(&std::io::Error::from_raw_os_error(2)));
+        assert!(!is_skippable_lock_error(&std::io::Error::from_raw_os_error(145)));
+        assert!(!is_skippable_lock_error(&std::io::Error::new(
+            std::io::ErrorKind::Other,
+            "no os error code"
+        )));
+    }
+
+    #[test]
+    fn test_remove_files_skips_locked_directory() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let base_dir = temp_dir.path();
+
+        let code_path = base_dir.join("Code.exe");
+        let commit_dir = base_dir.join("abc123");
+        let stale_commit_dir = base_dir.join("def456");
+        let deletable_dir = base_dir.join("otherdir");
+
+        fs::write(&code_path, "executable content").unwrap();
+        fs::create_dir(&commit_dir).unwrap();
+        fs::write(commit_dir.join("keep.txt"), "keep").unwrap();
+
+        let appx_dir = stale_commit_dir.join("appx");
+        fs::create_dir_all(&appx_dir).unwrap();
+        let locked_file = appx_dir.join("code_explorer_command_x64.dll");
+        fs::write(&locked_file, "dll content").unwrap();
+
+        fs::create_dir(&deletable_dir).unwrap();
+        fs::write(deletable_dir.join("f.txt"), "content").unwrap();
+
+        // Hold a non-shareable handle on the nested file so recursive deletion
+        // of the stale commit folder fails with a sharing violation.
+        let lock = crate::handle::FileHandle::new(&locked_file).expect("should open lock handle");
+
+        let result = remove_files(&log, &code_path, "abc123", None, None);
+
+        assert!(
+            result.is_ok(),
+            "gc should succeed even when a directory is locked: {:?}",
+            result.err()
+        );
+        assert!(code_path.exists(), "Code.exe should be preserved");
+        assert!(commit_dir.exists(), "current commit dir should be preserved");
+        assert!(
+            stale_commit_dir.exists(),
+            "locked stale dir should be skipped and left for the next gc"
+        );
+        assert!(locked_file.exists(), "locked file should remain on disk");
+        assert!(
+            !deletable_dir.exists(),
+            "unlocked directories should still be deleted"
+        );
+
+        lock.close().unwrap();
     }
 }
 
