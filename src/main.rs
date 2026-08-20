@@ -856,6 +856,33 @@ fn is_skippable_lock_error(err: &io::Error) -> bool {
 	)
 }
 
+fn open_file_for_gc(
+	log: &slog::Logger,
+	path: &Path,
+) -> Result<Option<FileHandle>, Box<dyn error::Error>> {
+	match FileHandle::new(path) {
+		Ok(file_handle) => Ok(Some(file_handle)),
+		Err(err) => {
+			let skippable = err
+				.downcast_ref::<io::Error>()
+				.map(is_skippable_lock_error)
+				.unwrap_or(false);
+			if skippable {
+				warn!(
+					log,
+					"Skipping locked file during gc, will retry on next update: {:?}: {}",
+					path,
+					err
+				);
+				Ok(None)
+			} else {
+				error!(log, "Failed to open file for gc: {:?}: {}", path, err);
+				Err(err)
+			}
+		}
+	}
+}
+
 fn remove_files(
 	log: &slog::Logger,
 	code_path: &Path,
@@ -960,22 +987,10 @@ fn remove_files(
 					if bin_entry_file_type.is_file() {
 						if bin_entry_name.starts_with("old_") {
 							info!(log, "Will delete old file in bin: {:?}", bin_entry_path);
-							
-							let msg = format!("Opening file handle: {:?}", bin_entry_path);
-							let file_handle = util::retry(
-								&msg,
-								|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
-									info!(
-										log,
-										"Get file handle: {:?} (attempt {})", bin_entry_path, attempt
-									);
 
-									FileHandle::new(&bin_entry_path)
-								},
-								Some(16),
-							)?;
-
-							file_handles_to_remove.push_back(file_handle);
+							if let Some(file_handle) = open_file_for_gc(log, &bin_entry_path)? {
+								file_handles_to_remove.push_back(file_handle);
+							}
 						} else {
 							info!(log, "Skipping non-old file in bin: {:?}", bin_entry_path);
 						}
@@ -989,21 +1004,9 @@ fn remove_files(
 			}
 		} else if entry_file_type.is_file() {
 			// Delete top-level files (except those already skipped)
-			let msg = format!("Opening file handle: {:?}", entry_path);
-			let file_handle = util::retry(
-				&msg,
-				|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
-					info!(
-						log,
-						"Get file handle: {:?} (attempt {})", entry_path, attempt
-					);
-
-					FileHandle::new(&entry_path)
-				},
-				Some(16),
-			)?;
-
-			file_handles_to_remove.push_back(file_handle);
+			if let Some(file_handle) = open_file_for_gc(log, &entry_path)? {
+				file_handles_to_remove.push_back(file_handle);
+			}
 		}
 	}
 

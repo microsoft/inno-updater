@@ -32,15 +32,7 @@ impl FileHandle {
 			);
 
 			if handle == INVALID_HANDLE_VALUE {
-				return Err(io::Error::new(
-					io::ErrorKind::Other,
-					format!(
-						"Failed to create file handle: {}\nPath: \"{}\"",
-						util::get_last_error_message()?,
-						path.display()
-					),
-				)
-				.into());
+				return Err(io::Error::last_os_error().into());
 			}
 
 			Ok(FileHandle(handle))
