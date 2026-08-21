@@ -668,15 +668,44 @@ fn perform_three_way_rename(
 	old_path: &Path,
 	new_path: &Path,
 ) -> Result<(), Box<dyn error::Error>> {
+	let requested_old_path = old_path;
+	let old_path = find_available_old_path(requested_old_path)?;
+	if old_path != requested_old_path {
+		warn!(
+			log,
+			"Old destination already exists; using alternate path to avoid replacing a potentially running executable: requested={:?}, alternate={:?}",
+			requested_old_path,
+			old_path
+		);
+	}
+
 	// Step 1: If new file exists and current file exists, rename current to old
 	if new_path.exists() && current_path.exists() {
-		info!(log, "Renaming current to old: {:?} -> {:?}", current_path, old_path);
-		if let Err(err) = fs::rename(current_path, old_path) {
-			error!(log, "Failed to rename current to old: {}", err);
+		info!(log, "Renaming current to old: {:?} -> {:?}", current_path, &old_path);
+		if let Err(err) = fs::rename(current_path, &old_path) {
+			error!(
+				log,
+				"Failed to rename current executable to an available destination: error={}, os_error={:?}, current_exists={}, selected_old_exists={}, requested_old_exists={}, current={:?}, selected_old={:?}, requested_old={:?}",
+				err,
+				err.raw_os_error(),
+				current_path.exists(),
+				old_path.exists(),
+				requested_old_path.exists(),
+				current_path,
+				old_path,
+				requested_old_path
+			);
 			return Err(Box::new(io::Error::new(
 				io::ErrorKind::Other,
 				format!("Failed to rename current to old: {}", err),
 			)));
+		}
+		if old_path != requested_old_path {
+			info!(
+				log,
+				"Successfully renamed current executable using alternate old path; the source is renameable while the requested destination remains occupied: {:?}",
+				requested_old_path
+			);
 		}
 	} else if !new_path.exists() {
 		// No new file to rename, so nothing to do
@@ -691,7 +720,7 @@ fn perform_three_way_rename(
 		// Restore old file if the operation fails and old file exists
 		if old_path.exists() {
 			info!(log, "Restoring old file: {:?} -> {:?}", old_path, current_path);
-			if let Err(restore_err) = fs::rename(old_path, current_path) {
+			if let Err(restore_err) = fs::rename(&old_path, current_path) {
 				error!(log, "Failed to restore old file: {}", restore_err);
 			}
 		}
@@ -703,6 +732,33 @@ fn perform_three_way_rename(
 	}
 
 	Ok(())
+}
+
+fn find_available_old_path(old_path: &Path) -> Result<PathBuf, Box<dyn error::Error>> {
+	if !old_path.exists() {
+		return Ok(old_path.to_owned());
+	}
+
+	let parent = old_path.parent().ok_or_else(|| {
+		io::Error::new(
+			io::ErrorKind::Other,
+			"Could not get parent directory of old path",
+		)
+	})?;
+	let file_name = old_path
+		.file_name()
+		.and_then(|name| name.to_str())
+		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get old file name"))?;
+	let base_name = file_name.strip_prefix("old_").unwrap_or(file_name);
+
+	for suffix in 1.. {
+		let candidate = parent.join(format!("old_{}_{}", suffix, base_name));
+		if !candidate.exists() {
+			return Ok(candidate);
+		}
+	}
+
+	unreachable!()
 }
 
 fn cleanup_dll_files(
@@ -798,6 +854,33 @@ fn is_skippable_lock_error(err: &io::Error) -> bool {
 		err.raw_os_error(),
 		Some(ERROR_ACCESS_DENIED) | Some(ERROR_SHARING_VIOLATION) | Some(ERROR_LOCK_VIOLATION)
 	)
+}
+
+fn open_file_for_gc(
+	log: &slog::Logger,
+	path: &Path,
+) -> Result<Option<FileHandle>, Box<dyn error::Error>> {
+	match FileHandle::new(path) {
+		Ok(file_handle) => Ok(Some(file_handle)),
+		Err(err) => {
+			let skippable = err
+				.downcast_ref::<io::Error>()
+				.map(is_skippable_lock_error)
+				.unwrap_or(false);
+			if skippable {
+				warn!(
+					log,
+					"Skipping locked file during gc, will retry on next update: {:?}: {}",
+					path,
+					err
+				);
+				Ok(None)
+			} else {
+				error!(log, "Failed to open file for gc: {:?}: {}", path, err);
+				Err(err)
+			}
+		}
+	}
 }
 
 fn remove_files(
@@ -904,22 +987,10 @@ fn remove_files(
 					if bin_entry_file_type.is_file() {
 						if bin_entry_name.starts_with("old_") {
 							info!(log, "Will delete old file in bin: {:?}", bin_entry_path);
-							
-							let msg = format!("Opening file handle: {:?}", bin_entry_path);
-							let file_handle = util::retry(
-								&msg,
-								|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
-									info!(
-										log,
-										"Get file handle: {:?} (attempt {})", bin_entry_path, attempt
-									);
 
-									FileHandle::new(&bin_entry_path)
-								},
-								Some(16),
-							)?;
-
-							file_handles_to_remove.push_back(file_handle);
+							if let Some(file_handle) = open_file_for_gc(log, &bin_entry_path)? {
+								file_handles_to_remove.push_back(file_handle);
+							}
 						} else {
 							info!(log, "Skipping non-old file in bin: {:?}", bin_entry_path);
 						}
@@ -933,21 +1004,9 @@ fn remove_files(
 			}
 		} else if entry_file_type.is_file() {
 			// Delete top-level files (except those already skipped)
-			let msg = format!("Opening file handle: {:?}", entry_path);
-			let file_handle = util::retry(
-				&msg,
-				|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
-					info!(
-						log,
-						"Get file handle: {:?} (attempt {})", entry_path, attempt
-					);
-
-					FileHandle::new(&entry_path)
-				},
-				Some(16),
-			)?;
-
-			file_handles_to_remove.push_back(file_handle);
+			if let Some(file_handle) = open_file_for_gc(log, &entry_path)? {
+				file_handles_to_remove.push_back(file_handle);
+			}
 		}
 	}
 
@@ -1060,6 +1119,27 @@ mod tests {
         let old_content = fs::read_to_string(&old_path).unwrap();
         assert_eq!(current_content, "new content", "Current file should contain new content");
         assert_eq!(old_content, "current content", "Old file should contain original content");
+    }
+
+    #[test]
+    fn test_perform_three_way_rename_preserves_existing_old_file() {
+        let temp_dir = tempdir().unwrap();
+        let log = setup_test_logger();
+        let current_path = temp_dir.path().join("current.txt");
+        let old_path = temp_dir.path().join("old_current.txt");
+        let new_path = temp_dir.path().join("new_current.txt");
+        let available_old_path = temp_dir.path().join("old_1_current.txt");
+
+        fs::write(&current_path, "current content").unwrap();
+        fs::write(&old_path, "previous old content").unwrap();
+        fs::write(&new_path, "new content").unwrap();
+
+        let result = perform_three_way_rename(&log, &current_path, &old_path, &new_path);
+
+        assert!(result.is_ok(), "Rename operation should succeed");
+        assert_eq!(fs::read_to_string(&current_path).unwrap(), "new content");
+        assert_eq!(fs::read_to_string(&old_path).unwrap(), "previous old content");
+        assert_eq!(fs::read_to_string(&available_old_path).unwrap(), "current content");
     }
 
     #[test]
