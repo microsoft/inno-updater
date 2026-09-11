@@ -476,6 +476,7 @@ fn update(
 
 		// Perform three-way rename for the main executable
 		window.update_status("Renaming main executable...");
+		let running_processes = process::capture_running_processes(log, code_path)?;
 		if let Err(err) = perform_three_way_rename(log, code_path, &old_exe_path, &new_exe_path) {
 			error!(log, "Executable update failed: {}", err);
 			window.exit();
@@ -525,7 +526,7 @@ fn update(
 		}
 
 		window.update_status("Attempting to stop current running application...");
-		process::wait_or_kill(log, code_path)?;
+		process::wait_or_kill(log, &running_processes)?;
 
 		// If a commit argument was provided, attempt to remove files not associated with that commit
 		if let Some(ref commit_str) = commit {

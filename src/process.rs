@@ -7,12 +7,135 @@ use std::ffi::c_void;
 use std::path::{Path, PathBuf};
 use std::{error, io, mem, ptr, thread, time};
 use crate::strings::from_utf16;
-use slog;
 use crate::util;
 
 pub struct RunningProcess {
 	pub name: String,
 	pub id: u32,
+}
+
+#[derive(Debug)]
+pub struct CapturedProcess {
+	name: String,
+	id: u32,
+	handle: isize,
+}
+
+impl CapturedProcess {
+	fn is_running(&self) -> Result<bool, Box<dyn error::Error>> {
+		use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+		use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+		let wait_result = unsafe { WaitForSingleObject(self.handle, 0) };
+		if wait_result == WAIT_TIMEOUT {
+			Ok(true)
+		} else if wait_result == WAIT_OBJECT_0 {
+			Ok(false)
+		} else if wait_result == WAIT_FAILED {
+			Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed checking process {} state: {}",
+					self.id,
+					last_error_message()
+				),
+			)
+			.into())
+		} else {
+			Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Unexpected wait result {} for process {}",
+					wait_result, self.id
+				),
+			)
+			.into())
+		}
+	}
+
+	fn terminate_and_wait(&self, log: &slog::Logger) -> Result<(), Box<dyn error::Error>> {
+		use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
+		use windows_sys::Win32::System::Threading::{TerminateProcess, WaitForSingleObject};
+
+		if !self.is_running()? {
+			info!(log, "{}, pid {} has already exited", self.name, self.id);
+			return Ok(());
+		}
+
+		info!(
+			log,
+			"Found {} running, pid {}, attempting to kill...", self.name, self.id
+		);
+
+		if unsafe { TerminateProcess(self.handle, 0) } == 0 {
+			return Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!("Failed to kill process {}: {}", self.id, last_error_message()),
+			)
+			.into());
+		}
+
+		info!(
+			log,
+			"Termination requested for {}, pid {}, waiting for exit",
+			self.name,
+			self.id
+		);
+
+		let wait_result = unsafe { WaitForSingleObject(self.handle, 30_000) };
+		if wait_result == WAIT_OBJECT_0 {
+			info!(
+				log,
+				"Confirmed {}, pid {} has exited", self.name, self.id
+			);
+			Ok(())
+		} else if wait_result == WAIT_TIMEOUT {
+			Err(io::Error::new(
+				io::ErrorKind::TimedOut,
+				format!("Timed out waiting for process {} to exit", self.id),
+			)
+			.into())
+		} else if wait_result == WAIT_FAILED {
+			Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Failed waiting for process {} to exit: {}",
+					self.id,
+					last_error_message()
+				),
+			)
+			.into())
+		} else {
+			Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Unexpected wait result {} for process {}",
+					wait_result, self.id
+				),
+			)
+			.into())
+		}
+	}
+}
+
+impl Drop for CapturedProcess {
+	fn drop(&mut self) {
+		use windows_sys::Win32::Foundation::CloseHandle;
+
+		unsafe {
+			CloseHandle(self.handle);
+		}
+	}
+}
+
+fn last_error_message() -> String {
+	util::get_last_error_message().unwrap_or_else(|_| "unknown error".to_string())
+}
+
+fn paths_equal(first: &Path, second: &Path) -> bool {
+	first
+		.to_string_lossy()
+		.eq_ignore_ascii_case(&second.to_string_lossy())
 }
 
 pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
@@ -76,40 +199,39 @@ pub fn get_running_processes() -> Result<Vec<RunningProcess>, io::Error> {
 	}
 }
 
-/**
- * Kills a running process, if its path is the same as the provided one.
- */
-fn kill_process_if(
+fn capture_process(
 	log: &slog::Logger,
 	process: &RunningProcess,
 	path: &Path,
-) -> Result<(), Box<dyn error::Error>> {
-	use windows_sys::Win32::Foundation::{CloseHandle, MAX_PATH};
+) -> Result<Option<CapturedProcess>, Box<dyn error::Error>> {
+	use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, MAX_PATH};
 	use windows_sys::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 	use windows_sys::Win32::System::Threading::{
-		OpenProcess, TerminateProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
+		OpenProcess, WaitForSingleObject, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
 		PROCESS_VM_READ,
 	};
 
-	info!(
-		log,
-		"Kill process if found: {}, {}", process.id, process.name
-	);
+	const SYNCHRONIZE_ACCESS: u32 = 0x00100000;
 
 	unsafe {
-		// https://msdn.microsoft.com/en-us/library/windows/desktop/ms684320(v=vs.85).aspx
 		let handle = OpenProcess(
-			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE,
+			PROCESS_QUERY_INFORMATION | PROCESS_VM_READ | PROCESS_TERMINATE | SYNCHRONIZE_ACCESS,
 			0,
 			process.id,
 		);
 
 		if ptr::eq(handle as *mut c_void, ptr::null()) {
+			if GetLastError() == ERROR_INVALID_PARAMETER {
+				info!(log, "{}, pid {} exited before it could be captured", process.name, process.id);
+				return Ok(None);
+			}
+
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				format!(
-					"Failed to open process: {}",
-					util::get_last_error_message()?
+					"Failed to open process {}: {}",
+					process.id,
+					last_error_message()
 				),
 			)
 			.into());
@@ -120,13 +242,21 @@ fn kill_process_if(
 			as usize;
 
 		if len == 0 {
+			let process_exited = WaitForSingleObject(handle, 0) == 0;
+			let message = last_error_message();
 			CloseHandle(handle);
+
+			if process_exited {
+				info!(log, "{}, pid {} exited before its path could be verified", process.name, process.id);
+				return Ok(None);
+			}
 
 			return Err(io::Error::new(
 				io::ErrorKind::Other,
 				format!(
-					"Failed to get process file name: {}",
-					util::get_last_error_message()?
+					"Failed to get process {} file name: {}",
+					process.id,
+					message
 				),
 			)
 			.into());
@@ -136,95 +266,82 @@ fn kill_process_if(
 
 		info!(
 			log,
-			"Found {} running {}, attempting to kill...", process_path.display(), path.display()
+			"Found {} running as pid {}", process_path.display(), process.id
 		);
 
-		if process_path != path {
+		if !paths_equal(&process_path, path) {
+			info!(
+				log,
+				"Skipping pid {} because its path does not match the update target",
+				process.id
+			);
 			CloseHandle(handle);
-			return Ok(());
+			return Ok(None);
 		}
 
-		info!(
-			log,
-			"Found {} running, pid {}, attempting to kill...", process.name, process.id
-		);
-
-		if TerminateProcess(handle, 0).is_negative() {
-			return Err(io::Error::new(io::ErrorKind::Other, "Failed to kill process").into());
-		}
-
-		info!(
-			log,
-			"Successfully killed {}, pid {}", process.name, process.id
-		);
-
-		CloseHandle(handle);
-		Ok(())
+		Ok(Some(CapturedProcess {
+			name: process.name.clone(),
+			id: process.id,
+			handle,
+		}))
 	}
 }
 
-/**
- * Checks if a process with the given PID is still running.
- */
-fn is_process_running(pid: u32) -> bool {
-	use std::ffi::c_void;
-	use windows_sys::Win32::Foundation::CloseHandle;
-	use windows_sys::Win32::System::Threading::{
-		GetExitCodeProcess, OpenProcess, PROCESS_QUERY_INFORMATION,
-	};
-
-	const STILL_ACTIVE: u32 = 259;
-
-	unsafe {
-		let handle = OpenProcess(PROCESS_QUERY_INFORMATION, 0, pid);
-
-		if ptr::eq(handle as *mut c_void, ptr::null()) {
-			return false;
-		}
-
-		let mut exit_code = 0u32;
-		let result = GetExitCodeProcess(handle, &mut exit_code);
-		CloseHandle(handle);
-
-		result != 0 && exit_code == STILL_ACTIVE
-	}
-}
-
-pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error::Error>> {
+pub fn capture_running_processes(
+	log: &slog::Logger,
+	path: &Path,
+) -> Result<Vec<CapturedProcess>, Box<dyn error::Error>> {
 	let file_name = path
 		.file_name()
-		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get process file name"))?;
+		.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get process file name"))?
+		.to_str()
+		.ok_or_else(|| {
+			io::Error::new(
+				io::ErrorKind::Other,
+				"Could not convert process file name to str",
+			)
+		})?;
 
-	let file_name = file_name.to_str().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get convert file name to str",
-		)
-	})?;
-
-	// Get the initial list of processes that match our target
-	let target_processes: Vec<RunningProcess> = get_running_processes()?
+	let target_processes = get_running_processes()?
 		.into_iter()
-		.filter(|p| p.name == file_name)
-		.collect();
+		.filter(|process| process.name.eq_ignore_ascii_case(file_name))
+		.filter_map(|process| capture_process(log, &process, path).transpose())
+		.collect::<Result<Vec<_>, _>>()?;
 
 	if target_processes.is_empty() {
 		info!(log, "{} is not running", file_name);
+	} else {
+		info!(
+			log,
+			"Captured {} running {} processes: {:?}",
+			target_processes.len(),
+			file_name,
+			target_processes.iter().map(|process| process.id).collect::<Vec<_>>()
+		);
+	}
+
+	Ok(target_processes)
+}
+
+pub fn wait_or_kill(
+	log: &slog::Logger,
+	target_processes: &[CapturedProcess],
+) -> Result<(), Box<dyn error::Error>> {
+	if target_processes.is_empty() {
 		return Ok(());
 	}
 
+	let file_name = &target_processes[0].name;
 	info!(
 		log,
-		"Found {} running {} processes: {:?}",
+		"Waiting for {} captured {} processes to exit",
 		target_processes.len(),
-		file_name,
-		target_processes.iter().map(|p| p.id).collect::<Vec<_>>()
+		file_name
 	);
 
 	let mut attempt: u32 = 0;
-	let mut still_running: Vec<&RunningProcess>;
+	let mut still_running: Vec<&CapturedProcess>;
 
-	// wait for up to 30 seconds until all target processes are dead
 	loop {
 		attempt += 1;
 
@@ -233,10 +350,12 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 			"Checking if {} processes are still running... (attempt {})", file_name, attempt
 		);
 
-		still_running = target_processes
-			.iter()
-			.filter(|p| is_process_running(p.id))
-			.collect();
+		still_running = Vec::new();
+		for process in target_processes {
+			if process.is_running()? {
+				still_running.push(process);
+			}
+		}
 
 		if still_running.is_empty() {
 			info!(log, "All {} processes have exited", file_name);
@@ -264,7 +383,6 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 		thread::sleep(time::Duration::from_millis(500));
 	}
 
-	// try to kill any running target processes
 	util::retry(
 		"attempting to kill any running processes",
 		|attempt| {
@@ -275,7 +393,7 @@ pub fn wait_or_kill(log: &slog::Logger, path: &Path) -> Result<(), Box<dyn error
 
 			let kill_errors: Vec<_> = still_running
 				.iter()
-				.filter_map(|p| kill_process_if(log, p, path).err())
+				.filter_map(|process| process.terminate_and_wait(log).err())
 				.collect();
 
 			for err in &kill_errors {
@@ -349,7 +467,8 @@ mod tests {
 	fn test_wait_or_kill_no_processes_running() {
 		let log = setup_test_logger();
 		let fake_path = PathBuf::from("C:\\nonexistent\\fake_process.exe");
-		let result = wait_or_kill(&log, &fake_path);
+		let processes = capture_running_processes(&log, &fake_path).unwrap();
+		let result = wait_or_kill(&log, &processes);
 		assert!(result.is_ok(), "Should succeed when no processes are running");
 	}
 
@@ -359,7 +478,8 @@ mod tests {
 		let test_helper_path = get_test_helper_path();
 		let mut child = start_test_process(&["run-for-duration", "5"]).expect("Failed to start test process");
 		assert!(wait_for_process_start("test_helper.exe", 1000), "Test process should start and be visible");
-		let result = wait_or_kill(&log, &test_helper_path);
+		let processes = capture_running_processes(&log, &test_helper_path).unwrap();
+		let result = wait_or_kill(&log, &processes);
 		let _ = child.wait();
 		assert!(result.is_ok(), "Should succeed when process exits naturally");
 	}
@@ -368,7 +488,7 @@ mod tests {
 	fn test_wait_or_kill_invalid_path() {
 		let log = setup_test_logger();
 		let path = PathBuf::from("");
-		let result = wait_or_kill(&log, &path);
+		let result = capture_running_processes(&log, &path);
 		assert!(result.is_err(), "Should fail with invalid path");
 		assert!(result.unwrap_err().to_string().contains("Could not get process file name"));
 	}
@@ -383,9 +503,32 @@ mod tests {
 		let processes = get_running_processes().unwrap();
 		let test_helper_count = processes.iter().filter(|p| p.name == "test_helper.exe").count();
 		assert!(test_helper_count >= 2, "Should have at least 2 test helper processes running");
-		let result = wait_or_kill(&log, &test_helper);
+		let processes = capture_running_processes(&log, &test_helper).unwrap();
+		let result = wait_or_kill(&log, &processes);
 		let _ = child1.wait();
 		let _ = child2.wait();
 		assert!(result.is_ok(), "Should succeed when killing multiple processes");
+	}
+
+	#[test]
+	fn test_wait_or_kill_process_after_executable_rename() {
+		let log = setup_test_logger();
+		let temp_dir = tempfile::tempdir().expect("Failed to create temp directory");
+		let process_path = temp_dir.path().join("test_helper.exe");
+		let renamed_process_path = temp_dir.path().join("old_test_helper.exe");
+		std::fs::copy(get_test_helper_path(), &process_path).expect("Failed to copy test process");
+
+		let mut child = Command::new(&process_path)
+			.arg("run-forever")
+			.spawn()
+			.expect("Failed to start test process");
+		assert!(wait_for_process_start("test_helper.exe", 1000), "Test process should start and be visible");
+		let processes = capture_running_processes(&log, &process_path).unwrap();
+		assert_eq!(processes.len(), 1, "Should capture the test process before renaming");
+
+		std::fs::rename(&process_path, &renamed_process_path).expect("Failed to rename running test process");
+		let result = wait_or_kill(&log, &processes);
+		let _ = child.wait();
+		assert!(result.is_ok(), "Should kill and await the captured process after its executable is renamed");
 	}
 }
