@@ -420,7 +420,6 @@ fn update(
 	// 4) Check for the presence of new_exe_filename and proceed with renaming
 	if new_exe_path.exists() {
 		info!(log, "Found new executable: {:?}", new_exe_path);
-		let running_processes = process::capture_running_processes(log, code_path)?;
 
 		// 5) Handle the bin folder files with 3-way rename
 		let bin_dir = dir_path.join("bin");
@@ -477,6 +476,7 @@ fn update(
 
 		// Perform three-way rename for the main executable
 		window.update_status("Renaming main executable...");
+		let running_processes = process::capture_running_processes(log, code_path)?;
 		if let Err(err) = perform_three_way_rename(log, code_path, &old_exe_path, &new_exe_path) {
 			error!(log, "Executable update failed: {}", err);
 			window.exit();
