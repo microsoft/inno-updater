@@ -420,6 +420,7 @@ fn update(
 	// 4) Check for the presence of new_exe_filename and proceed with renaming
 	if new_exe_path.exists() {
 		info!(log, "Found new executable: {:?}", new_exe_path);
+		let running_processes = process::capture_running_processes(log, code_path)?;
 
 		// 5) Handle the bin folder files with 3-way rename
 		let bin_dir = dir_path.join("bin");
@@ -525,7 +526,7 @@ fn update(
 		}
 
 		window.update_status("Attempting to stop current running application...");
-		process::wait_or_kill(log, code_path)?;
+		process::wait_or_kill(log, &running_processes)?;
 
 		// If a commit argument was provided, attempt to remove files not associated with that commit
 		if let Some(ref commit_str) = commit {
