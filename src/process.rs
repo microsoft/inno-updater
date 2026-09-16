@@ -22,6 +22,58 @@ pub struct CapturedProcess {
 }
 
 impl CapturedProcess {
+	fn wait_for_exit_after_path_error(
+		self,
+		log: &slog::Logger,
+		path_error: io::Error,
+	) -> Result<(), Box<dyn error::Error>> {
+		use windows_sys::Win32::Foundation::{
+			ERROR_ACCESS_DENIED, WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT,
+		};
+		use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+		// Image queries can be denied during teardown before the process handle is signaled.
+		let timeout = if path_error.raw_os_error() == Some(ERROR_ACCESS_DENIED as i32) {
+			1_000
+		} else {
+			0
+		};
+
+		match unsafe { WaitForSingleObject(self.handle, timeout) } {
+			WAIT_OBJECT_0 => {
+				info!(
+					log,
+					"{}, pid {} exited before its path could be verified", self.name, self.id
+				);
+				Ok(())
+			}
+			WAIT_TIMEOUT => Err(io::Error::new(
+				path_error.kind(),
+				format!("Failed to get process {} file name: {}", self.id, path_error),
+			)
+			.into()),
+			WAIT_FAILED => {
+				let wait_error = io::Error::last_os_error();
+				Err(io::Error::new(
+					wait_error.kind(),
+					format!(
+						"Failed waiting for process {} after its path query failed ({}): {}",
+						self.id, path_error, wait_error
+					),
+				)
+				.into())
+			}
+			result => Err(io::Error::new(
+				io::ErrorKind::Other,
+				format!(
+					"Unexpected wait result {} for process {} after its path query failed: {}",
+					result, self.id, path_error
+				),
+			)
+			.into()),
+		}
+	}
+
 	fn is_running(&self) -> Result<bool, Box<dyn error::Error>> {
 		use windows_sys::Win32::Foundation::{WAIT_FAILED, WAIT_OBJECT_0, WAIT_TIMEOUT};
 		use windows_sys::Win32::System::Threading::WaitForSingleObject;
@@ -204,11 +256,10 @@ fn capture_process(
 	process: &RunningProcess,
 	path: &Path,
 ) -> Result<Option<CapturedProcess>, Box<dyn error::Error>> {
-	use windows_sys::Win32::Foundation::{CloseHandle, GetLastError, ERROR_INVALID_PARAMETER, MAX_PATH};
+	use windows_sys::Win32::Foundation::{GetLastError, ERROR_INVALID_PARAMETER, MAX_PATH};
 	use windows_sys::Win32::System::ProcessStatus::K32GetModuleFileNameExW;
 	use windows_sys::Win32::System::Threading::{
-		OpenProcess, WaitForSingleObject, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE,
-		PROCESS_VM_READ,
+		OpenProcess, PROCESS_QUERY_INFORMATION, PROCESS_TERMINATE, PROCESS_VM_READ,
 	};
 
 	const SYNCHRONIZE_ACCESS: u32 = 0x00100000;
@@ -237,29 +288,20 @@ fn capture_process(
 			.into());
 		}
 
+		let captured_process = CapturedProcess {
+			name: process.name.clone(),
+			id: process.id,
+			handle,
+		};
+
 		let mut raw_path = [0u16; MAX_PATH as usize];
 		let len = K32GetModuleFileNameExW(handle, mem::zeroed(), raw_path.as_mut_ptr(), MAX_PATH)
 			as usize;
 
 		if len == 0 {
-			let process_exited = WaitForSingleObject(handle, 0) == 0;
-			let message = last_error_message();
-			CloseHandle(handle);
-
-			if process_exited {
-				info!(log, "{}, pid {} exited before its path could be verified", process.name, process.id);
-				return Ok(None);
-			}
-
-			return Err(io::Error::new(
-				io::ErrorKind::Other,
-				format!(
-					"Failed to get process {} file name: {}",
-					process.id,
-					message
-				),
-			)
-			.into());
+			let path_error = io::Error::last_os_error();
+			captured_process.wait_for_exit_after_path_error(log, path_error)?;
+			return Ok(None);
 		}
 
 		let process_path = PathBuf::from(from_utf16(&raw_path[0..len])?);
@@ -275,15 +317,10 @@ fn capture_process(
 				"Skipping pid {} because its path does not match the update target",
 				process.id
 			);
-			CloseHandle(handle);
 			return Ok(None);
 		}
 
-		Ok(Some(CapturedProcess {
-			name: process.name.clone(),
-			id: process.id,
-			handle,
-		}))
+		Ok(Some(captured_process))
 	}
 }
 
@@ -413,7 +450,7 @@ pub fn wait_or_kill(
 mod tests {
 	use super::*;
 	use std::path::PathBuf;
-	use std::process::{Command, Child};
+	use std::process::{Command, Child, Stdio};
 	use std::thread;
 	use std::time::Duration;
 	use slog::{Logger, o, Drain};
@@ -461,6 +498,177 @@ mod tests {
 			thread::sleep(Duration::from_millis(10));
 		}
 		false
+	}
+
+	struct PathQueryTestProcess {
+		child: Child,
+		_directory: tempfile::TempDir,
+	}
+
+	impl PathQueryTestProcess {
+		fn new() -> Self {
+			let directory = tempfile::tempdir().expect("Failed to create temporary directory");
+			let path = directory.path().join("path_query_test_helper.exe");
+			std::fs::copy(get_test_helper_path(), &path).expect("Failed to copy test helper");
+			let child = Command::new(path)
+				.arg("wait-for-stdin")
+				.stdin(Stdio::piped())
+				.spawn()
+				.expect("Failed to start test process");
+			Self { child, _directory: directory }
+		}
+
+		fn capture(&self, access: u32) -> CapturedProcess {
+			use windows_sys::Win32::System::Threading::OpenProcess;
+
+			let handle = unsafe { OpenProcess(access, 0, self.child.id()) };
+			assert_ne!(handle, 0, "Failed to open test process: {}", io::Error::last_os_error());
+			CapturedProcess {
+				name: "path_query_test_helper.exe".to_string(),
+				id: self.child.id(),
+				handle,
+			}
+		}
+
+		fn finish(&mut self) {
+			drop(self.child.stdin.take());
+			self.child.wait().expect("Failed to wait for test process");
+		}
+	}
+
+	impl Drop for PathQueryTestProcess {
+		fn drop(&mut self) {
+			self.finish();
+		}
+	}
+
+	fn assert_handle_closed(handle: isize) {
+		use windows_sys::Win32::Foundation::{GetHandleInformation, ERROR_INVALID_HANDLE};
+
+		let mut flags = 0;
+		let result = unsafe { GetHandleInformation(handle, &mut flags) };
+		let error = io::Error::last_os_error();
+		assert_eq!((result, error.raw_os_error()), (0, Some(ERROR_INVALID_HANDLE as i32)));
+	}
+
+	#[test]
+	fn test_capture_process_path_error_waits_for_exit() {
+		use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, WAIT_TIMEOUT};
+		use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+		use windows_sys::Win32::System::Threading::WaitForSingleObject;
+
+		let log = setup_test_logger();
+		let mut process = PathQueryTestProcess::new();
+		let captured = process.capture(SYNCHRONIZE);
+		let handle = captured.handle;
+		assert_eq!(unsafe { WaitForSingleObject(handle, 0) }, WAIT_TIMEOUT);
+
+		let stdin = process.child.stdin.take().expect("Missing test process stdin");
+		let exit = thread::spawn(move || {
+			thread::sleep(Duration::from_millis(200));
+			drop(stdin);
+		});
+		let result = captured.wait_for_exit_after_path_error(
+			&log,
+			io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32),
+		);
+		assert_handle_closed(handle);
+		exit.join().expect("Failed to release test process stdin");
+
+		assert!(result.is_ok(), "Should wait for the exiting process: {:?}", result);
+		assert!(process.child.try_wait().expect("Failed to query test process").is_some());
+	}
+
+	#[test]
+	fn test_capture_process_path_error_times_out_preserving_error() {
+		use windows_sys::Win32::Foundation::{SetLastError, ERROR_ACCESS_DENIED, ERROR_INVALID_PARAMETER};
+		use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+
+		let log = setup_test_logger();
+		let mut process = PathQueryTestProcess::new();
+		let captured = process.capture(SYNCHRONIZE);
+		let handle = captured.handle;
+		let path_error = io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32);
+		let expected = format!("Failed to get process {} file name: {}", captured.id, path_error);
+		unsafe { SetLastError(ERROR_INVALID_PARAMETER) };
+
+		let start = time::Instant::now();
+		let result = captured.wait_for_exit_after_path_error(&log, path_error);
+		let elapsed = start.elapsed();
+		assert_handle_closed(handle);
+
+		assert_eq!(result.unwrap_err().to_string(), expected);
+		assert!(process.child.try_wait().expect("Failed to query test process").is_none());
+		assert!(
+			elapsed >= Duration::from_millis(900) && elapsed < Duration::from_secs(5),
+			"Expected a one-second grace period, got {:?}", elapsed
+		);
+	}
+
+	#[test]
+	fn test_capture_process_path_error_does_not_wait_for_other_errors() {
+		use windows_sys::Win32::Foundation::ERROR_PARTIAL_COPY;
+		use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+
+		let log = setup_test_logger();
+		let mut process = PathQueryTestProcess::new();
+		let captured = process.capture(SYNCHRONIZE);
+		let handle = captured.handle;
+		let path_error = io::Error::from_raw_os_error(ERROR_PARTIAL_COPY as i32);
+		let expected = format!("Failed to get process {} file name: {}", captured.id, path_error);
+
+		let start = time::Instant::now();
+		let result = captured.wait_for_exit_after_path_error(&log, path_error);
+		let elapsed = start.elapsed();
+		assert_handle_closed(handle);
+
+		assert_eq!(result.unwrap_err().to_string(), expected);
+		assert!(process.child.try_wait().expect("Failed to query test process").is_none());
+		assert!(elapsed < Duration::from_millis(500), "Should not wait for other errors: {:?}", elapsed);
+	}
+
+	#[test]
+	fn test_capture_process_path_error_skips_exited_process() {
+		use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_PARTIAL_COPY};
+		use windows_sys::Win32::Storage::FileSystem::SYNCHRONIZE;
+
+		let log = setup_test_logger();
+		for error in [ERROR_ACCESS_DENIED, ERROR_PARTIAL_COPY] {
+			let mut process = PathQueryTestProcess::new();
+			let captured = process.capture(SYNCHRONIZE);
+			let handle = captured.handle;
+			process.finish();
+
+			let result = captured.wait_for_exit_after_path_error(
+				&log,
+				io::Error::from_raw_os_error(error as i32),
+			);
+			assert_handle_closed(handle);
+			assert!(result.is_ok(), "Should skip an exited process: {:?}", result);
+		}
+	}
+
+	#[test]
+	fn test_capture_process_path_error_reports_wait_failure() {
+		use windows_sys::Win32::Foundation::{ERROR_ACCESS_DENIED, ERROR_PARTIAL_COPY};
+		use windows_sys::Win32::System::Threading::PROCESS_QUERY_LIMITED_INFORMATION;
+
+		let log = setup_test_logger();
+		let mut process = PathQueryTestProcess::new();
+		let captured = process.capture(PROCESS_QUERY_LIMITED_INFORMATION);
+		let handle = captured.handle;
+		let path_error = io::Error::from_raw_os_error(ERROR_PARTIAL_COPY as i32);
+		let expected = format!(
+			"Failed waiting for process {} after its path query failed ({}): {}",
+			captured.id,
+			path_error,
+			io::Error::from_raw_os_error(ERROR_ACCESS_DENIED as i32),
+		);
+
+		let result = captured.wait_for_exit_after_path_error(&log, path_error);
+		assert_handle_closed(handle);
+		assert_eq!(result.unwrap_err().to_string(), expected);
+		assert!(process.child.try_wait().expect("Failed to query test process").is_none());
 	}
 
 	#[test]

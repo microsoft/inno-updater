@@ -15,6 +15,20 @@ Helper utility to enable background updates for VS Code in Windows
 
 ## Development
 
+### Process capture
+
+Before replacing the executable, the updater captures matching processes. If a process's
+image-path query fails with `ERROR_ACCESS_DENIED`, it waits up to one second on the
+already-open handle for the process to finish exiting. Only confirmed exits are skipped;
+a timeout or failed wait remains an error. Other path-query failures only check for an
+already-completed exit.
+
+Run the process tests serially on Windows:
+
+```powershell
+cargo test --locked --bin inno_updater --target i686-pc-windows-msvc process::tests -- --test-threads=1
+```
+
 ### AddressSanitizer (ASAN)
 
 **One-time setup:**

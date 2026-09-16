@@ -15,6 +15,12 @@ fn main() {
             "exit-immediately" => {
                 std::process::exit(0);
             }
+            "wait-for-stdin" => {
+                let mut input = String::new();
+                std::io::stdin()
+                    .read_line(&mut input)
+                    .expect("Failed to read test process stdin");
+            }
             "run-forever" => {
                 loop {
                     thread::sleep(Duration::from_millis(100));
