@@ -475,8 +475,19 @@ fn update(
 		}
 
 		// Perform three-way rename for the main executable
+		window.update_status("Checking for running application processes...");
+		let running_processes = match process::capture_running_processes(log, code_path) {
+			Ok(processes) => processes,
+			Err(err) => {
+				warn!(
+					log,
+					"Unable to capture the target process list, continuing because process shutdown is best-effort: {}",
+					err
+				);
+				Vec::new()
+			}
+		};
 		window.update_status("Renaming main executable...");
-		let running_processes = process::capture_running_processes(log, code_path)?;
 		if let Err(err) = perform_three_way_rename(log, code_path, &old_exe_path, &new_exe_path) {
 			error!(log, "Executable update failed: {}", err);
 			window.exit();
@@ -1078,16 +1089,30 @@ fn remove_files(
 mod tests {
     use super::*;
     use std::fs;
+    use std::io::Write;
+    use std::sync::Mutex;
     use tempfile::tempdir;
-    use slog::{Logger, o};
-    use slog_term::{TermDecorator, FullFormat};
-    use slog_async::Async;
+    use slog::{Drain, Logger, o};
+    use slog_term::{FullFormat, PlainDecorator};
+
+    struct TestWriter;
+
+    impl Write for TestWriter {
+        fn write(&mut self, buffer: &[u8]) -> io::Result<usize> {
+            eprint!("{}", String::from_utf8_lossy(buffer));
+            Ok(buffer.len())
+        }
+
+        fn flush(&mut self) -> io::Result<()> {
+            Ok(())
+        }
+    }
 
     // Helper function to set up a test logger
     fn setup_test_logger() -> Logger {
-        let decorator = TermDecorator::new().build();
+        let decorator = PlainDecorator::new(TestWriter);
         let drain = FullFormat::new(decorator).build().fuse();
-        let drain = Async::new(drain).build().fuse();
+        let drain = Mutex::new(drain).fuse();
         Logger::root(drain, o!())
     }
 

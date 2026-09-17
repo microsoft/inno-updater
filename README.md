@@ -15,6 +15,26 @@ Helper utility to enable background updates for VS Code in Windows
 
 ## Development
 
+### Process capture
+
+Before replacing the executable, the updater captures matching processes using limited query
+rights and retains separate handles for waiting and best-effort termination. A denied image path
+query gets a one second grace period because Windows can deny queries briefly while a process is
+exiting. Processes that remain inaccessible, cannot be identified, or cannot be terminated are
+logged and skipped rather than failing the update.
+
+Run the process tests on Windows:
+
+```powershell
+cargo test --locked --bin inno_updater --target i686-pc-windows-msvc process::tests
+```
+
+To inspect process logs in execution order, run the tests serially with output capture disabled:
+
+```powershell
+cargo test --locked --bin inno_updater --target i686-pc-windows-msvc process::tests -- --test-threads=1 --nocapture
+```
+
 ### AddressSanitizer (ASAN)
 
 **One-time setup:**
