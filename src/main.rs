@@ -15,9 +15,11 @@ extern crate windows_sys;
 #[cfg(test)]
 extern crate tempfile;
 
+#[allow(dead_code)]
 mod blockio;
 mod gui;
 mod handle;
+#[allow(dead_code)]
 mod model;
 mod process;
 mod resources;
@@ -27,7 +29,7 @@ mod util;
 use handle::FileHandle;
 use model::{FileRec, Header};
 use slog::Drain;
-use std::collections::{HashSet, LinkedList};
+use std::collections::LinkedList;
 use std::io::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
@@ -37,6 +39,7 @@ use std::{env, error, fmt, fs, io, thread};
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 
+#[allow(dead_code)]
 fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<dyn error::Error>> {
 	let input_file = fs::File::open(path)?;
 	let mut input = io::BufReader::new(input_file);
@@ -52,6 +55,7 @@ fn read_file(path: &Path) -> Result<(Header, Vec<FileRec>), Box<dyn error::Error
 	Ok((header, recs))
 }
 
+#[allow(dead_code)]
 fn write_file(
 	path: &Path,
 	header: &Header,
@@ -90,294 +94,9 @@ fn write_file(
 	Ok(())
 }
 
-fn delete_existing_version(
-	log: &slog::Logger,
-	root_path: &Path,
-	update_folder_name: &str,
-) -> Result<(), Box<dyn error::Error>> {
-	let mut directories: LinkedList<PathBuf> = LinkedList::new();
-	let mut top_directories: LinkedList<PathBuf> = LinkedList::new();
-	let mut file_handles: LinkedList<FileHandle> = LinkedList::new();
-
-	let root = PathBuf::from(root_path);
-	directories.push_back(root);
-
-	while let Some(dir) = directories.pop_front() {
-		info!(log, "Reading directory: {:?}", dir);
-
-		for entry in fs::read_dir(&dir)? {
-			let entry = entry?;
-			let entry_name = entry.file_name();
-			let entry_name = entry_name
-				.to_str()
-				.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get entry name"))?;
-
-			if dir == root_path {
-				// don't delete the update folder
-				if entry_name == update_folder_name {
-					continue;
-				}
-
-				// don't delete ourselves
-				if entry_name == "tools" {
-					continue;
-				}
-
-				// don't delete any of the unins* files
-				if entry_name.starts_with("unins") {
-					continue;
-				}
-
-				// don't delete the sparse package folder
-				if entry_name == "appx" {
-					continue;
-				}
-
-				// don't delete the bootstrap folder
-				if entry_name == "bootstrap" {
-					continue;
-				}
-			}
-
-			let entry_file_type = entry.file_type()?;
-			let entry_path = entry.path();
-
-			if entry_file_type.is_dir() {
-				if dir == root_path {
-					top_directories.push_back(entry_path.to_owned());
-				}
-
-				directories.push_back(entry_path);
-			} else if entry_file_type.is_file() {
-				// attempt to get exclusive file handle
-				let msg = format!("Opening file handle: {:?}", entry_path);
-				let file_handle = util::retry(
-					&msg,
-					|attempt| -> Result<FileHandle, Box<dyn error::Error>> {
-						info!(
-							log,
-							"Get file handle: {:?} (attempt {})", entry_path, attempt
-						);
-
-						FileHandle::new(&entry_path)
-					},
-					Some(16),
-				)?;
-
-				file_handles.push_back(file_handle);
-			}
-		}
-	}
-
-	info!(log, "Collected all directories and file handles");
-
-	for file_handle in &file_handles {
-		util::retry(
-			"marking a file for deletion",
-			|_| -> Result<(), Box<dyn error::Error>> { file_handle.mark_for_deletion() },
-			None,
-		)?;
-	}
-
-	info!(log, "All file handles marked for deletion");
-
-	for file_handle in &file_handles {
-		util::retry(
-			"closing a file handle",
-			|_| -> Result<(), Box<dyn error::Error>> { file_handle.close() },
-			None,
-		)?;
-	}
-
-	info!(log, "All files deleted");
-
-	for dir in top_directories {
-		let msg = format!("Deleting a directory: {:?}", dir);
-		util::retry(
-			&msg,
-			|attempt| -> Result<(), Box<dyn error::Error>> {
-				if !dir.exists() {
-					return Ok(());
-				}
-
-				info!(
-					log,
-					"Delete directory recursively: {:?} (attempt {})", dir, attempt
-				);
-
-				fs::remove_dir_all(&dir)?;
-				Ok(())
-			},
-			None,
-		)?;
-	}
-
-	Ok(())
-}
-
-fn move_update(
-	log: &slog::Logger,
-	uninstdat_path: &Path,
-	update_folder_name: &str,
-) -> Result<(), Box<dyn error::Error>> {
-	info!(
-		log,
-		"move_update: {:?}, {}", uninstdat_path, update_folder_name
-	);
-
-	let root_path = uninstdat_path.parent().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get parent path of uninstdat",
-		)
-	})?;
-
-	let mut update_path = PathBuf::from(root_path);
-	update_path.push(update_folder_name);
-
-	let stat = fs::metadata(&update_path)?;
-
-	if !stat.is_dir() {
-		return Err(
-			io::Error::new(io::ErrorKind::Other, "Update folder is not a directory").into(),
-		);
-	}
-
-	// safely delete all current files
-	delete_existing_version(log, root_path, update_folder_name)?;
-
-	// move update to current
-	for entry in fs::read_dir(&update_path)? {
-		let entry = entry?;
-		let entry_name = entry.file_name();
-		let entry_name = entry_name
-			.to_str()
-			.ok_or_else(|| io::Error::new(io::ErrorKind::Other, "Could not get entry name"))?;
-
-		let mut target = PathBuf::from(root_path);
-		target.push(entry_name);
-
-		let msg = format!("Renaming: {:?}", entry_name);
-		util::retry(
-			&msg,
-			|attempt| {
-				info!(log, "Rename: {:?} (attempt {})", entry_name, attempt);
-				fs::rename(entry.path(), &target)?;
-				Ok(())
-			},
-			None,
-		)?;
-	}
-
-	info!(log, "Delete: {:?}", update_path);
-	fs::remove_dir_all(update_path)?;
-
-	Ok(())
-}
-
-fn patch_uninstdat(
-	log: &slog::Logger,
-	uninstdat_path: &PathBuf,
-	update_path: &PathBuf,
-) -> Result<(), Box<dyn error::Error>> {
-	let (header, recs) = read_file(uninstdat_path)?;
-
-	info!(log, "header: {:?}", header);
-	info!(log, "num_recs: {:?}", recs.len());
-
-	let recs: Vec<FileRec> = recs
-		.iter()
-		.map(|rec| match rec.typ {
-			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
-				rec.rebase(&update_path)
-			}
-			_ => Ok(rec.clone()),
-		})
-		.collect::<Result<Vec<_>, _>>()?;
-
-	// Remove duplicate records of type DeleteDirOrFiles and DeleteFile that only have one path
-	let before = recs.len();
-	let mut set: HashSet<String> = HashSet::new();
-	let recs = recs
-		.into_iter()
-		.filter(|rec| {
-			if rec.typ != model::UninstallRecTyp::DeleteDirOrFiles
-				&& rec.typ != model::UninstallRecTyp::DeleteFile
-			{
-				return true;
-			}
-
-			match rec.get_paths() {
-				Ok(paths) => {
-					if paths.len() != 1 {
-						return true;
-					}
-
-					let path = &paths[0];
-					if set.contains(path) {
-						return false;
-					}
-
-					set.insert(path.clone());
-					true
-				}
-				Err(_) => false, // Skip records with errors in paths
-			}
-		})
-		.collect::<Vec<FileRec>>();
-
-	let header = header.clone_with_num_recs(recs.len());
-	info!(log, "Removed {} duplicate records", before - recs.len());
-
-	info!(log, "Updating uninstall file {:?}", uninstdat_path);
-	write_file(uninstdat_path, &header, recs)?;
-
-	Ok(())
-}
-
-fn do_update(
-	log: &slog::Logger,
-	code_path: &PathBuf,
-	update_folder_name: &str,
-) -> Result<(), Box<dyn error::Error>> {
-	info!(log, "do_update: {:?}, {}", code_path, update_folder_name);
-
-	let root_path = code_path.parent().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get parent path of uninstdat",
-		)
-	})?;
-
-	let mut uninstdat_path = PathBuf::from(root_path);
-	uninstdat_path.push("unins000.dat");
-
-	move_update(log, &uninstdat_path, update_folder_name)?;
-
-	let root_path = uninstdat_path.parent().ok_or_else(|| {
-		io::Error::new(
-			io::ErrorKind::Other,
-			"Could not get parent path of uninstdat",
-		)
-	})?;
-
-	let mut update_path = PathBuf::from(root_path);
-	update_path.push(update_folder_name);
-
-	// if, for any reason, the uninstdat file is corrupt, let's continue silently
-	// https://github.com/Microsoft/vscode/issues/45607
-	patch_uninstdat(log, &uninstdat_path, &update_path).unwrap_or_else(|err| {
-		warn!(log, "Failed to patch uninst.dat file");
-		warn!(log, "{}", err);
-	});
-
-	Ok(())
-}
-
 fn update(
 	log: &slog::Logger,
 	code_path: &PathBuf,
-	update_folder_name: &str,
 	silent: bool,
 	label: String,
 	commit: Option<String>,
@@ -561,9 +280,12 @@ fn update(
 		window.update_status("Update completed successfully!");
 		info!(log, "Update completed successfully");
 	} else {
-		info!(log, "New executable not found: {:?}, using traditional update method", new_exe_path);
-		// Fall back to the original update method if no new executable is found
-		do_update(log, code_path, update_folder_name)?;
+		window.exit();
+		return Err(io::Error::new(
+			io::ErrorKind::NotFound,
+			format!("New executable not found: {:?}", new_exe_path),
+		)
+		.into());
 	}
 
 	window.exit();
@@ -626,7 +348,7 @@ fn _main(log: &slog::Logger, args: &[String]) -> Result<(), Box<dyn error::Error
 		None
 	};
 
-	update(log, &code_path, "_", silent == "true", label, None, proxy_exe_name)
+	update(log, &code_path, silent == "true", label, None, proxy_exe_name)
 }
 
 fn handle_error(log_path: &str) {
@@ -638,40 +360,6 @@ fn handle_error(log_path: &str) {
 	);
 
 	gui::message_box(&msg, "Visual Studio Code", gui::MessageBoxType::Error);
-}
-
-fn parse(path: &Path) -> Result<(), Box<dyn error::Error>> {
-	let (header, recs) = read_file(path)?;
-
-	println!("{:?}", header);
-
-	use std::collections::HashMap;
-	let mut map: HashMap<u16, u32> = HashMap::new();
-
-	println!("Paths");
-	for rec in recs {
-		let count = map.entry(rec.typ as u16).or_insert(0);
-		*count += 1;
-
-		match rec.typ {
-			model::UninstallRecTyp::DeleteDirOrFiles | model::UninstallRecTyp::DeleteFile => {
-				let paths = rec.get_paths().unwrap();
-				for path in paths {
-					println!("  {}", path);
-				}
-			}
-			_ => {}
-		}
-	}
-
-	println!("Summary");
-	let mut records: Vec<_> = map.into_iter().collect();
-	records.sort_by(|a, b| a.0.cmp(&b.0));
-	for (k, c) in &records {
-		println!("  {} records of type 0x{:x}", c, k);
-	}
-
-	Ok(())
 }
 
 fn perform_three_way_rename(
@@ -1456,13 +1144,7 @@ fn main() {
 			.as_secs()
 	));
 
-	if args.len() == 3 && args[1] == "--parse" {
-		let path = PathBuf::from(&args[2]);
-		parse(&path).unwrap_or_else(|err| {
-			eprintln!("{}", err);
-			std::process::exit(1);
-		});
-	} else if args.len() >= 4 && args[1] == "--gc" {
+	if args.len() >= 4 && args[1] == "--gc" {
 		let code_path = PathBuf::from(&args[2]);
 		let commit_to_preserve = &args[3];
 		let main_exe_name: Option<&str> = args.get(4).and_then(|s| if s.is_empty() { None } else { Some(s.as_str()) });
@@ -1502,29 +1184,6 @@ fn main() {
 		});
 
 		info!(log, "Successfully completed file removal operation");
-	} else if args.len() == 4 && args[1] == "--update" {
-		let uninstdat_path = PathBuf::from(&args[2]);
-		let update_path = PathBuf::from(&args[3]);
-
-		let decorator = slog_term::TermDecorator::new().build();
-		let drain = slog_term::FullFormat::new(decorator).build().fuse();
-		let drain = slog_async::Async::new(drain).build().fuse();
-		let log = slog::Logger::root(drain, o!());
-
-		info!(
-			log,
-			"Updating uninstall file {:?}, update path {:?}", uninstdat_path, update_path
-		);
-
-		patch_uninstdat(&log, &uninstdat_path, &update_path).unwrap_or_else(|err| {
-			eprintln!("{}", err);
-			std::process::exit(1);
-		});
-
-		info!(
-			log,
-			"Successfully updated uninstall file {:?}", uninstdat_path
-		);
 	} else if args.len() >= 3 && args[1] == "--gui" {
 		let (tx, rx) = mpsc::channel();
 		let label = args[2].clone();

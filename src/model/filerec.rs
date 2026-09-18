@@ -3,9 +3,8 @@
  *  Licensed under the MIT License. See LICENSE in the project root for license information.
  *----------------------------------------------------------------------------------------*/
 
-use byteorder::{ByteOrder, LittleEndian, ReadBytesExt, WriteBytesExt};
+use byteorder::{LittleEndian, ReadBytesExt, WriteBytesExt};
 use std::io::prelude::*;
-use std::path::{Path, PathBuf};
 use std::string::String;
 use std::{error, fmt};
 
@@ -136,54 +135,6 @@ fn decode_strings<'a>(data: &[u8]) -> Result<Vec<String>, StringDecodeError<'a>>
 }
 
 #[derive(Debug, Clone)]
-pub struct StringEncodeError<'a>(&'a str);
-
-impl<'a> fmt::Display for StringEncodeError<'a> {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "String encode error: {}", self.0)
-	}
-}
-
-impl<'a> error::Error for StringEncodeError<'a> {
-	fn description(&self) -> &str {
-		"StringEncodeError"
-	}
-
-	fn cause(&self) -> Option<&dyn error::Error> {
-		None
-	}
-}
-
-fn encode_strings<'a>(strings: &Vec<String>) -> Result<Vec<u8>, StringEncodeError<'a>> {
-	let mut result: Vec<u8> = Vec::with_capacity(1024);
-
-	for string in strings.iter() {
-		let u16data: Vec<u16> = string.encode_utf16().collect();
-		let size = u16data.len() * 2;
-
-		result
-			.write_u8(0xfe)
-			.map_err(|_| StringEncodeError("Failed to write file rec string header"))?;
-
-		result
-			.write_i32::<LittleEndian>(-(size as i32))
-			.map_err(|_| StringEncodeError("Failed to write file rec string size"))?;
-
-		let start = result.len();
-		let end = start + size;
-		result.resize(end, 0);
-
-		LittleEndian::write_u16_into(&u16data, &mut result[start..end]);
-	}
-
-	result
-		.write_u8(0xff)
-		.map_err(|_| StringEncodeError("Failed to write file rec string end"))?;
-
-	Ok(result)
-}
-
-#[derive(Debug, Clone)]
 pub struct FileRecParseError<'a>(&'a str);
 
 impl<'a> fmt::Display for FileRecParseError<'a> {
@@ -214,25 +165,6 @@ impl<'a> fmt::Display for FileRecWriteError<'a> {
 impl<'a> error::Error for FileRecWriteError<'a> {
 	fn description(&self) -> &str {
 		"FileRecWriteError"
-	}
-
-	fn cause(&self) -> Option<&dyn error::Error> {
-		None
-	}
-}
-
-#[derive(Debug, Clone)]
-pub struct RebaseError;
-
-impl fmt::Display for RebaseError {
-	fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-		write!(f, "Rebase error")
-	}
-}
-
-impl error::Error for RebaseError {
-	fn description(&self) -> &str {
-		"RebaseError"
 	}
 
 	fn cause(&self) -> Option<&dyn error::Error> {
@@ -291,45 +223,6 @@ impl FileRec {
 		Ok(())
 	}
 
-	pub fn rebase(&self, update_path: &Path) -> Result<FileRec, Box<dyn error::Error>> {
-		let paths = decode_strings(&self.data)?;
-
-		let from = update_path.to_str().ok_or(RebaseError)?;
-		let to = update_path
-			.parent()
-			.and_then(|p| p.to_str())
-			.ok_or(RebaseError)?;
-
-		let rebased_paths = paths
-			.iter()
-			.map(|original| {
-				Path::new(original)
-					// strip prefix
-					.strip_prefix(from)
-					.map_err(|_| RebaseError)
-					// join with new path
-					.and_then(|p| Ok(PathBuf::from(to).join(p)))
-					// convert to string
-					.and_then(|p| p.to_str().map(|s| s.to_owned()).ok_or(RebaseError))
-					// remove trailing backslash
-					.and_then(|s| {
-						if s.ends_with('\\') {
-							Ok(s[..s.len() - 1].to_owned())
-						} else {
-							Ok(s)
-						}
-					})
-					.unwrap_or(original.to_owned())
-			})
-			.collect::<Vec<String>>();
-
-		Ok(FileRec {
-			typ: self.typ,
-			extra_data: self.extra_data,
-			data: encode_strings(&rebased_paths)?,
-		})
-	}
-
 	pub fn get_paths(&self) -> Result<Vec<String>, StringDecodeError<'_>> {
 		decode_strings(&self.data)
 	}
@@ -344,20 +237,6 @@ mod tests {
 	use std::fs::File;
 	use std::io::BufReader;
 	use std::path::PathBuf;
-
-	#[test]
-	fn test_decode_encode_strings() {
-		let strings = vec![
-			String::from("Hello"),
-			String::from("World"),
-			String::from("Test"),
-		];
-
-		let encoded = encode_strings(&strings).unwrap();
-		let decoded = decode_strings(&encoded).unwrap();
-
-		assert_eq!(strings, decoded);
-	}
 
 	#[test]
 	fn test_file_rec_serialization() {
@@ -379,37 +258,6 @@ mod tests {
 		assert_eq!(original.typ, parsed.typ);
 		assert_eq!(original.extra_data, parsed.extra_data);
 		assert_eq!(original.data, parsed.data);
-	}
-
-	#[test]
-	fn test_rebase() {
-		let strings = vec![
-			String::from("C:\\Code\\foo.txt"),
-			String::from("C:\\Code\\_\\bar.txt"),
-			String::from("C:\\Code\\_\\foo\\bar.txt"),
-		];
-
-		let data = encode_strings(&strings).unwrap();
-		let record = FileRec {
-			typ: UninstallRecTyp::DeleteFile,
-			extra_data: 0,
-			data,
-		};
-
-		let expected = vec![
-			"C:\\Code\\foo.txt",
-			"C:\\Code\\bar.txt",
-			"C:\\Code\\foo\\bar.txt",
-		];
-
-		let rebased = record.rebase(Path::new("C:\\Code\\_")).unwrap();
-		let paths = rebased.get_paths().unwrap();
-		assert_eq!(paths, expected);
-
-		// Test with trailing backslash
-		let rebased = record.rebase(Path::new("C:\\Code\\_\\")).unwrap();
-		let paths = rebased.get_paths().unwrap();
-		assert_eq!(paths, expected);
 	}
 
 	#[test]

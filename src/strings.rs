@@ -31,6 +31,7 @@ pub fn read_utf8_string(
 		})
 }
 
+#[allow(dead_code)]
 pub fn write_utf8_string(
 	writer: &mut dyn Write,
 	string: &String,
