@@ -21,6 +21,10 @@ extends:
   parameters:
     binaryName: inno_updater
     signing: false
+    skipAPIScan: >-
+      ${{ or(eq(variables['Build.Reason'], 'PullRequest'),
+             not(or(eq(variables['Build.SourceBranch'], 'refs/heads/main'),
+                    startsWith(variables['Build.SourceBranch'], 'refs/heads/release/')))) }}
     apiScanTarget: i686-pc-windows-msvc
     apiScanSoftwareVersion: 2024
     tsa:
